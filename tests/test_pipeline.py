@@ -71,3 +71,20 @@ def test_arcade_voices_render(inst):
     assert a.shape == (int(0.8 * 44100), 2) and np.isfinite(a).all()
     assert 0.2 < np.abs(a).max() <= 0.8
     assert len(np.unique(np.round(a[:, 0] / (np.abs(a[:, 0]).max() + 1e-9), 3))) <= 40   # crushed to few levels
+
+
+def _centroid(a, sr=44100):
+    x = a[:, 0]
+    X = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    return (X * f).sum() / X.sum()
+
+
+@pytest.mark.parametrize("retro,arcade,freq", [("orbit", "boom", 165), ("comet", "zap", 523),
+                                               ("drift", "warble", 330), ("ping", "blip", 1320)])
+def test_retro_voices_are_mellow(retro, arcade, freq):
+    from cloudtone.sonify import Note
+    mk = lambda inst: render(Note(freq, 1.0, 0.8, 0, inst, 15, "x"), 44100, np.random.default_rng(0))
+    r, a = mk(retro), mk(arcade)
+    assert np.isfinite(r).all() and 0.2 < np.abs(r).max() <= 0.8
+    assert _centroid(r) < 0.4 * _centroid(a)          # far less bright than the arcade voice

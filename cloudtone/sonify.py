@@ -50,9 +50,12 @@ class Note:
     kind: str
 
 
-INSTRUMENTS = ("bell", "pluck", "glass", "tick", "boom", "zap", "warble", "blip")
+INSTRUMENTS = ("orbit", "comet", "drift", "ping", "boom", "zap", "warble", "blip",
+               "bell", "pluck", "glass", "tick")
 ARCADE = ("boom", "zap", "warble", "blip")
+RETRO = ("orbit", "comet", "drift", "ping")
 SOUND_SETS = {
+    "retro": {"alpha": "orbit", "beta": "drift", "muon": "comet", "electron": "ping"},
     "classic": {"alpha": "bell", "beta": "pluck", "muon": "glass", "electron": "tick"},
     "arcade": {"alpha": "boom", "beta": "warble", "muon": "zap", "electron": "blip"},
 }
@@ -172,6 +175,8 @@ def render(note: Note, sr: int, rng: np.random.Generator | None = None) -> np.nd
     elif inst == "tick":     # short bright blip with a breath of noise
         y = np.sin(phase * 2) + 0.3 * rng.normal(0, 1, n)
         y *= _env(n, sr, 0.001, max(0.02, note.dur * 0.3))
+    elif inst in RETRO:
+        y = _retro(inst, note, t, n, sr)
     else:
         y = _arcade(inst, note, t, phase, n, sr, rng)
     y = y / (np.max(np.abs(y)) + 1e-9) * note.gain
@@ -229,3 +234,72 @@ def _arcade(inst, note, t, phase, n, sr, rng) -> np.ndarray:
         y = _square(_sweep_cycles(fr, sr))
         y *= _env(n, sr, 0.001, max(0.03, d * 0.45))
     return _crush(y)
+
+
+# ---------- retro-future voices: 1970s analog synth sci-fi ----------
+# Additive "analog" oscillators: each harmonic is weighted by a moving low-pass
+# (and a resonant bump at the cutoff), which is how a filter sweep sounds,
+# without a per-sample loop. Band-limited by construction, so nothing fizzes.
+
+def _analog(freq_t: np.ndarray, sr: int, shape: str, cutoff: np.ndarray, reso=0.0,
+            max_h=18, detune_cents=0.0) -> np.ndarray:
+    """freq_t: Hz per sample. cutoff: cutoff per sample, in multiples of the
+    fundamental. shape: saw | tri | sine.
+
+    Kept cheap for a Pi Zero: filter weights are computed at a control rate
+    (every 64 samples) and harmonics come from the Chebyshev recurrence
+    sin(k x) = 2 cos(x) sin((k-1) x) - sin((k-2) x), so there is one sin/cos
+    per oscillator instead of one per harmonic."""
+    n = len(freq_t)
+    cyc = 2 * np.pi * np.cumsum(freq_t) / sr
+    fmax = float(freq_t.max())
+    K = max(1, min(max_h, int(sr / 2.3 / max(fmax, 1.0))))
+    step = 64
+    cut_c = np.asarray(cutoff, dtype=np.float64)[::step]
+    idx = np.minimum(np.arange(n) // step, len(cut_c) - 1)
+    oscs = [(1.0, 0.0)] if not detune_cents else [(0.5, -detune_cents), (0.5, detune_cents)]
+    y = np.zeros(n)
+    for weight, cents in oscs:
+        ph = cyc * 2 ** (cents / 1200)
+        s1, c2 = np.sin(ph), 2 * np.cos(ph)
+        s_prev, s_k = np.zeros(n), s1          # sin(0), sin(1 x)
+        for k in range(1, K + 1):
+            if shape == "saw":
+                amp = 1.0 / k
+            elif shape == "tri":
+                amp = 0.0 if k % 2 == 0 else (1.0 / k ** 2) * (1 if (k // 2) % 2 == 0 else -1)
+            else:
+                amp = 1.0 if k == 1 else 0.0
+            if amp:
+                lp = 1.0 / np.sqrt(1.0 + (k / cut_c) ** 4)                 # 2-pole roll-off
+                if reso:
+                    lp = lp * (1.0 + reso * np.exp(-((k - cut_c) / (0.35 * cut_c + 0.5)) ** 2))
+                y += weight * amp * lp[idx] * s_k
+            if shape == "sine":
+                break
+            s_prev, s_k = s_k, c2 * s_k - s_prev
+    return y
+
+
+def _retro(inst, note, t, n, sr) -> np.ndarray:
+    f, d = note.freq, note.dur
+    wob = 2 ** (note.vibrato_cents / 1200 * np.sin(2 * np.pi * 5.0 * t))     # the track's own wobble
+    if inst == "orbit":      # alpha: detuned analog pair, filter sweeping down with a "wow"
+        cutoff = 1.3 + 6.0 * np.exp(-t / (0.22 * d)) + 0.6 * np.sin(2 * np.pi * 0.7 * t) * np.exp(-t / d)
+        y = _analog(f * wob * np.ones(n), sr, "saw", cutoff, reso=0.7, max_h=14, detune_cents=7)
+        y *= _env(n, sr, 0.035, 0.6 * d)
+    elif inst == "comet":    # muon: theremin-like glide down a fourth, vibrato easing in
+        glide = 1 + (2 ** (5 / 12) - 1) * np.exp(-t / 0.12)
+        vib = 2 ** (14 / 1200 * np.sin(2 * np.pi * 5.5 * t) * np.minimum(1, np.maximum(0, t - 0.25) / 0.5))
+        y = _analog(f * glide * vib * wob, sr, "tri", np.full(n, 2.2), max_h=7)
+        y += 0.35 * _analog(f * glide * vib * wob * 2, sr, "sine", np.ones(n))     # airy octave
+        y *= _env(n, sr, 0.07, 0.7 * d)
+    elif inst == "drift":    # beta: soft triangle with slow tape wow
+        wow = 1 + 0.006 * np.sin(2 * np.pi * 0.9 * t) + 0.003 * np.sin(2 * np.pi * 2.3 * t)
+        y = _analog(f * wow * wob, sr, "tri", np.full(n, 3.5), max_h=9, detune_cents=5)
+        y *= _env(n, sr, 0.015, 0.45 * d)
+    else:                    # ping: electron, a gentle sonar ping
+        fr = f * (1 + 0.04 * np.exp(-t / 0.02)) * wob
+        y = _analog(fr, sr, "sine", np.ones(n)) + 0.12 * _analog(fr * 2.01, sr, "sine", np.ones(n))
+        y *= _env(n, sr, 0.003, max(0.12, d))
+    return y

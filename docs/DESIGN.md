@@ -73,7 +73,7 @@ roadmap).
 
 | Track property | Musical parameter |
 |---|---|
-| particle type | instrument and register (arcade set: alpha boom, muon zap, beta warble, electron blip; classic set: bell, glass, pluck, tick) |
+| particle type | instrument and register (retro-future set: alpha orbit, muon comet, beta drift, electron ping; arcade set: alpha boom, muon zap, beta warble, electron blip; classic set: bell, glass, pluck, tick) |
 | angle | pitch (scale degree; 0 to 180° spans two octaves of the chosen scale) |
 | path length | note length |
 | ionisation (brightness) | loudness |
@@ -99,6 +99,24 @@ Skipped trails still count and still light the page; they just don't sound.
 in milliseconds. Ionisation density is the physical stand-in: slow, heavy
 particles (alphas) ionise densely, while fast, minimum-ionising ones (muons)
 leave faint lines. So the "speed" information arrives as loudness and timbre.
+
+### Retro-future voices (default)
+
+Mellow 1970s analog-synth sci-fi: same era as the vector screen, softer than
+the arcade board.
+
+| Voice | Particle | How it's made |
+|---|---|---|
+| orbit | alpha | two saws detuned ±7 cents through a resonant low-pass sweeping down, with a slow 0.7 Hz "wow" |
+| comet | muon | triangle with an airy octave, gliding down a fourth into the note like a theremin; vibrato eases in after 0.25 s |
+| drift | beta | soft detuned triangle on slow tape wow (0.9 and 2.3 Hz) |
+| ping | electron | sine "sonar" ping with a small pitch drop |
+
+The oscillators are additive: each harmonic is weighted by a moving filter
+response, at a 64-sample control rate, using the Chebyshev recurrence for the
+harmonics. That keeps them band-limited (no fizz) and fast enough for a Zero 2.
+They are 6–10× less bright (spectral centroid) than the arcade voices; a test
+checks this. The echo is tape-like: each repeat is slightly darker.
 
 ### Arcade voices
 

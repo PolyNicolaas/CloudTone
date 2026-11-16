@@ -57,8 +57,10 @@ class Mixer:
         if self._echo > 0 and n <= self._dl:
             idx = (self._dpos + np.arange(n)) % self._dl
             d = self._dbuf[idx]
-            self._dbuf[idx] = out + 0.35 * d[:, ::-1]   # ping-pong feedback
-            out += self._echo * d
+            # tape-like: each repeat is a little darker (4-tap average = gentle low-pass)
+            dk = (d + np.roll(d, 1, 0) + np.roll(d, 2, 0) + np.roll(d, 3, 0)) * 0.25
+            self._dbuf[idx] = out + 0.38 * dk[:, ::-1]   # ping-pong feedback
+            out += self._echo * dk
             self._dpos = (self._dpos + n) % self._dl
         return np.tanh(out * self.gain).astype(np.float32)   # soft clip
 

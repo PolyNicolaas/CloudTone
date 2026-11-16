@@ -167,7 +167,7 @@ def test_events_carry_shape_for_recreation(tmp_path):
 
 def test_sound_set_swaps_all_but_silent(tmp_path):
     app = make_app(tmp_path)
-    assert app.settings()["audio.sound_set"] == "arcade"
+    assert app.settings()["audio.sound_set"] == "retro"
     app.update({"audio.instruments.electron": "mute"})
     app.update({"audio.sound_set": "classic"})
     ins = app.cfg.audio.instruments

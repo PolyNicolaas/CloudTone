@@ -27,8 +27,9 @@ audio:
   mode: free              # free | beat
   bpm: 96
   echo: 0.3
-  # arcade: boom | zap | warble | blip    classic: bell | pluck | glass | tick    or mute
-  instruments: {alpha: boom, beta: warble, muon: zap, electron: blip}
+  # retro future: orbit | comet | drift | ping   arcade: boom | zap | warble | blip
+  # classic: bell | pluck | glass | tick   or mute
+  instruments: {alpha: orbit, beta: drift, muon: comet, electron: ping}
   root_hz: 110            # A2
   scale: minor_pentatonic # major_pentatonic | dorian | whole_tone | chromatic
   master_gain: 0.6
