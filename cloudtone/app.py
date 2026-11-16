@@ -7,6 +7,7 @@ import collections
 import logging
 import math
 import os
+import queue
 import sys
 import threading
 import time
@@ -19,7 +20,7 @@ from .camera import open_source
 from .classifier import Classifier
 from .config import Config, save_config
 from .detector import TrackDetector, TrackEvent
-from .sonify import INSTRUMENTS, SCALES, event_to_note, render, sample_event
+from .sonify import INSTRUMENTS, SCALES, SOUND_SETS, event_to_note, render, sample_event
 
 log = logging.getLogger("cloudtone")
 
@@ -38,6 +39,7 @@ SETTINGS = {
     "audio.bpm": (int, 40, 200),
     "audio.echo": (float, 0.0, 0.8),
     **{f"audio.instruments.{k}": (str, INSTRUMENTS + ("mute",)) for k in KINDS},
+    "audio.sound_set": (str, tuple(SOUND_SETS)),
     "mapping.pitch_from": (str, ("angle", "length", "height", "across")),
     "mapping.pitch_octaves": (float, 1.0, 4.0),
     "mapping.pitch_reverse": (bool,),
@@ -86,8 +88,15 @@ def annotate(gray, recent, now, bg=None, roi=None, boxes=True):
 
 
 class Pipeline:
-    def __init__(self, cfg: Config):
+    """sync=True renders notes inline (offline demo, tests). Live, a worker thread
+    renders them so a long note never stalls the camera loop on a Pi Zero."""
+
+    def __init__(self, cfg: Config, sync: bool = True):
         self.cfg = cfg
+        self.sync = sync
+        self._jobs: queue.Queue = queue.Queue()
+        if not sync:
+            threading.Thread(target=self._render_worker, name="render", daemon=True).start()
         self.det = TrackDetector(cfg.detect)
         self.cls = Classifier(cfg.classify)
         a = cfg.audio
@@ -98,6 +107,14 @@ class Pipeline:
         self.event_times: collections.deque = collections.deque(maxlen=2000)
         self.played: collections.deque = collections.deque()   # note times, for the limiter
         self.next_id = 1          # survives detector resets, so the page never replays old events
+
+    def _render_worker(self):
+        sr = self.cfg.audio.sample_rate
+        while True:
+            note, target = self._jobs.get()
+            audio = render(note, sr, self.rng)
+            # beat-snapped notes keep their beat if rendering finished in time
+            self.mixer.play(audio, max(0, target - self.mixer.samples_out))
 
     def step(self, frame, t) -> list[TrackEvent]:
         a = self.cfg.audio
@@ -124,7 +141,11 @@ class Pipeline:
                 if a.mode == "beat":            # snap the onset to the next eighth note
                     step = a.sample_rate * 60.0 / a.bpm / 2
                     delay = int((-self.mixer.samples_out) % step)
-                self.mixer.play(render(note, a.sample_rate, self.rng), delay)
+                target = self.mixer.samples_out + delay        # the sample it should start on
+                if self.sync:
+                    self.mixer.play(render(note, a.sample_rate, self.rng), delay)
+                else:
+                    self._jobs.put((note, target))
                 e.extra.update(note=f"{note.instrument} {note.freq:.0f} Hz", freq=note.freq,
                                dur=note.dur, delay=delay / a.sample_rate, inst=note.instrument,
                                vib=note.vibrato_cents, gain=note.gain)
@@ -160,7 +181,7 @@ def _set(cfg, key, value):
 class App:
     def __init__(self, cfg: Config, cfg_path: str | None):
         self.cfg, self.cfg_path = cfg, cfg_path
-        self.pipe = Pipeline(cfg)
+        self.pipe = Pipeline(cfg, sync=False)
         self.paused = False
         self.restart_needed = False
         self.fps = 0.0
@@ -184,7 +205,10 @@ class App:
     # ---------- settings ----------
     def settings(self) -> dict:
         c = self.cfg
-        out = {k: _get(c, k) for k in SETTINGS if not k.startswith(("outputs.", "camera.preset"))}
+        out = {k: _get(c, k) for k in SETTINGS if not k.startswith(("outputs.", "camera.preset", "audio.sound_set"))}
+        out["audio.sound_set"] = next((n for n, m in SOUND_SETS.items()
+                                       if all(c.audio.instruments.get(k) in (v, "mute") for k, v in m.items())
+                                       and any(c.audio.instruments.get(k) == v for k, v in m.items())), "mixed")
         out["camera.preset"] = next((n for n, wh in PRESETS.items()
                                      if wh == (c.camera.width, c.camera.height)), "custom")
         out["outputs.sonos"] = "sonos" in c.audio.outputs
@@ -224,6 +248,11 @@ class App:
             outs = [o for o in c.audio.outputs if o != name] + ([name] if val else [])
             c.audio.outputs = outs
             self._set_output(name, val)
+            return
+        if key == "audio.sound_set":        # one tap swaps all four, keeping silent ones silent
+            for k, inst in SOUND_SETS[val].items():
+                if c.audio.instruments.get(k) != "mute":
+                    c.audio.instruments[k] = inst
             return
         if key == "camera.preset":
             c.camera.width, c.camera.height = PRESETS[val]

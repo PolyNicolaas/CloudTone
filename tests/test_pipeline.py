@@ -61,3 +61,13 @@ def test_notes_render_and_mix():
     mix.play(audio)
     blk = mix.next_block(1024)
     assert np.abs(blk).max() > 0 and np.abs(blk).max() <= 1.0
+
+
+@pytest.mark.parametrize("inst", ["boom", "zap", "warble", "blip"])
+def test_arcade_voices_render(inst):
+    from cloudtone.sonify import Note
+    note = Note(freq=330, dur=0.8, gain=0.8, pan=0.3, instrument=inst, vibrato_cents=20, kind="beta")
+    a = render(note, 44100, np.random.default_rng(0))
+    assert a.shape == (int(0.8 * 44100), 2) and np.isfinite(a).all()
+    assert 0.2 < np.abs(a).max() <= 0.8
+    assert len(np.unique(np.round(a[:, 0] / (np.abs(a[:, 0]).max() + 1e-9), 3))) <= 40   # crushed to few levels

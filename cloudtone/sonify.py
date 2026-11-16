@@ -50,7 +50,12 @@ class Note:
     kind: str
 
 
-INSTRUMENTS = ("bell", "pluck", "glass", "tick")
+INSTRUMENTS = ("bell", "pluck", "glass", "tick", "boom", "zap", "warble", "blip")
+ARCADE = ("boom", "zap", "warble", "blip")
+SOUND_SETS = {
+    "classic": {"alpha": "bell", "beta": "pluck", "muon": "glass", "electron": "tick"},
+    "arcade": {"alpha": "boom", "beta": "warble", "muon": "zap", "electron": "blip"},
+}
 
 
 # typical length (mm) and the note length it gets, per particle; "fixed" uses the typical value
@@ -164,9 +169,63 @@ def render(note: Note, sr: int, rng: np.random.Generator | None = None) -> np.nd
                 break
             y += (1 / h) * np.sin(phase * h) * np.exp(-t * h / (0.35 * note.dur))
         y *= _env(n, sr, 0.002, note.dur * 0.5)
-    else:                    # tick: short bright blip with a breath of noise
+    elif inst == "tick":     # short bright blip with a breath of noise
         y = np.sin(phase * 2) + 0.3 * rng.normal(0, 1, n)
         y *= _env(n, sr, 0.001, max(0.02, note.dur * 0.3))
+    else:
+        y = _arcade(inst, note, t, phase, n, sr, rng)
     y = y / (np.max(np.abs(y)) + 1e-9) * note.gain
+    if inst in ARCADE:       # square waves sound much louder than sines at the same peak
+        y *= 0.55
     ang = (note.pan + 1) * np.pi / 4      # equal-power pan
     return np.column_stack([y * np.cos(ang), y * np.sin(ang)]).astype(np.float32)
+
+
+# ---------- arcade voices: square waves and clocked noise, like 1970s sound chips ----------
+
+def _square(cycles: np.ndarray, duty=0.5) -> np.ndarray:
+    return np.where((cycles % 1.0) < duty, 1.0, -1.0)
+
+
+def _sweep_cycles(f_of_t: np.ndarray, sr: int) -> np.ndarray:
+    return np.cumsum(f_of_t) / sr
+
+
+def _clocked_noise(n, sr, rate_hz: np.ndarray, rng) -> np.ndarray:
+    """Noise held at a changing clock rate, like the shift-register noise in an
+    old arcade board: a fast clock hisses, a slow one rumbles."""
+    ticks = np.floor(np.cumsum(rate_hz) / sr).astype(int)
+    vals = rng.choice([-1.0, 1.0], ticks[-1] + 2)
+    return vals[ticks]
+
+
+def _crush(y: np.ndarray, levels=15, hold=4) -> np.ndarray:
+    """4-bit-ish amplitude steps and an ~11 kHz sample-and-hold."""
+    y = y / (np.max(np.abs(y)) + 1e-9)
+    y = np.round(y * levels) / levels
+    return np.repeat(y[::hold], hold)[: len(y)]
+
+
+def _arcade(inst, note, t, phase, n, sr, rng) -> np.ndarray:
+    f, d = note.freq, note.dur
+    vib = 2 ** (note.vibrato_cents / 1200 * np.sin(2 * np.pi * 5.0 * t))   # the track's wobble
+    if inst == "zap":        # muon: a falling "pew" that settles and rings
+        fr = f * (1 + 3.0 * np.exp(-t / 0.05)) * vib
+        duty = 0.5 - 0.375 * np.minimum(1, t / 0.15)            # thins out as it rings
+        y = _square(_sweep_cycles(fr, sr), duty)
+        y *= _env(n, sr, 0.002, d * 0.55)
+    elif inst == "warble":   # beta: a flying-saucer warble
+        fr = f * (1 + 0.07 * np.sin(2 * np.pi * 7.5 * t)) * vib
+        y = _square(_sweep_cycles(fr, sr))
+        y *= _env(n, sr, 0.01, d * 0.5)
+    elif inst == "boom":     # alpha: thump plus a rumbling explosion
+        thump_f = 0.5 * f * (1 + 1.5 * np.exp(-t / 0.03))
+        thump = _square(_sweep_cycles(thump_f, sr)) * np.exp(-t / 0.12)
+        rumble = _clocked_noise(n, sr, 300 + 5000 * np.exp(-t / (0.25 * d)), rng) * np.exp(-t / (0.45 * d))
+        y = 0.8 * thump + 0.7 * rumble
+        y *= _env(n, sr, 0.001, d)
+    else:                    # blip: electron, a short chirp up
+        fr = 2 * f * (1 + 0.5 * np.minimum(1, t / 0.03))
+        y = _square(_sweep_cycles(fr, sr))
+        y *= _env(n, sr, 0.001, max(0.03, d * 0.45))
+    return _crush(y)

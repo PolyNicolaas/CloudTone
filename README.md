@@ -33,6 +33,9 @@ Open `http://<pi-address>:8765/` on your phone (same Wi-Fi).
 
 * **Play**: volume, sensitivity, scale and key, timing (as they arrive, or on the beat with a tempo),
   echo, an instrument per particle (or silent), Sonos room and speaker volume, Pi speaker.
+* **Sound set**: *Arcade* (default) uses square waves and crunchy clocked noise like a 1970s
+  arcade board: alpha booms, muon zaps, beta warbles, electron blips. *Classic* uses soft
+  bell, pluck, glass and tick tones. Mix and match per particle.
 * **Tone**: how a trace becomes a note. Pick what sets pitch (angle, length, height or
   left-to-right position), its range and direction; note length and loudness sources;
   stereo spread and wobble; sound and octave per particle with a "Hear it" button; and

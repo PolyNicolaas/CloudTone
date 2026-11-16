@@ -73,7 +73,7 @@ roadmap).
 
 | Track property | Musical parameter |
 |---|---|
-| particle type | instrument and register |
+| particle type | instrument and register (arcade set: alpha boom, muon zap, beta warble, electron blip; classic set: bell, glass, pluck, tick) |
 | angle | pitch (scale degree; 0 to 180° spans two octaves of the chosen scale) |
 | path length | note length |
 | ionisation (brightness) | loudness |
@@ -99,6 +99,22 @@ Skipped trails still count and still light the page; they just don't sound.
 in milliseconds. Ionisation density is the physical stand-in: slow, heavy
 particles (alphas) ionise densely, while fast, minimum-ionising ones (muons)
 leave faint lines. So the "speed" information arrives as loudness and timbre.
+
+### Arcade voices
+
+Built to sound like discrete 1970s arcade sound boards, matching the vector screen:
+
+| Voice | Particle | How it's made |
+|---|---|---|
+| boom | alpha | square-wave thump falling in pitch, plus noise from a slowing clock (hiss to rumble), like an Asteroids explosion |
+| zap | muon | pulse wave sweeping down from 4× pitch, duty cycle narrowing as it rings |
+| warble | beta | square wave with a 7.5 Hz pitch warble, like a flying saucer |
+| blip | electron | short square chirp upward |
+
+All four are crushed to about 4-bit levels with an 11 kHz sample-and-hold.
+Notes render on a worker thread, so a long note never stalls the camera loop
+on a Pi Zero (about 10 ms per note here, likely 100+ ms on the Zero 2).
+Beat-snapped notes still land on their beat.
 
 ## Recreation (visuals)
 

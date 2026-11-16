@@ -60,9 +60,10 @@ class AudioConfig:
     mode: str = "free"                # "free" = play on arrival, "beat" = snap to a tempo grid
     bpm: int = 96
     echo: float = 0.3                 # 0..0.8
-    # instrument per particle: bell | pluck | glass | tick | mute
+    # instrument per particle: classic bell | pluck | glass | tick,
+    # arcade boom | zap | warble | blip, or mute
     instruments: dict = field(default_factory=lambda: {
-        "alpha": "bell", "beta": "pluck", "muon": "glass", "electron": "tick"})
+        "alpha": "boom", "beta": "warble", "muon": "zap", "electron": "blip"})
 
 
 @dataclass

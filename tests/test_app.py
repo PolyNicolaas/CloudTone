@@ -163,3 +163,15 @@ def test_events_carry_shape_for_recreation(tmp_path):
         assert e["w"] > 0 and e["ts"] > 0
         if not e["closed"]:
             assert len(e["profile"]) == len(e["shape"])
+
+
+def test_sound_set_swaps_all_but_silent(tmp_path):
+    app = make_app(tmp_path)
+    assert app.settings()["audio.sound_set"] == "arcade"
+    app.update({"audio.instruments.electron": "mute"})
+    app.update({"audio.sound_set": "classic"})
+    ins = app.cfg.audio.instruments
+    assert ins == {"alpha": "bell", "beta": "pluck", "muon": "glass", "electron": "mute"}
+    assert app.settings()["audio.sound_set"] == "classic"
+    app.update({"audio.instruments.alpha": "zap"})
+    assert app.settings()["audio.sound_set"] == "mixed"

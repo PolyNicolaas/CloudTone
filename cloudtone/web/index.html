@@ -247,6 +247,11 @@
   <div id="tone" role="tabpanel" aria-labelledby="tab-tone" hidden>
     <section>
       <h2>Particles</h2>
+      <div class="row"><div class="lab inline"><span id="set-label">Sound set</span>
+        <span class="seg" role="group" aria-labelledby="set-label">
+          <button data-set="arcade">Arcade</button><button data-set="classic">Classic</button>
+        </span></div>
+        <p id="set-help"></p></div>
       <div id="particles"></div>
     </section>
 
@@ -391,7 +396,8 @@ const PARTICLES = [
   ["muon", "Muon", "Long and ruler-straight"],
   ["electron", "Electron", "Tiny curl"],
 ];
-const INSTR = [["bell","Bell"],["pluck","Pluck"],["glass","Glass"],["tick","Tick"],["mute","Silent"]];
+const INSTR = [["boom","Boom"],["zap","Zap"],["warble","Warble"],["blip","Blip"],
+               ["bell","Bell"],["pluck","Pluck"],["glass","Glass"],["tick","Tick"],["mute","Silent"]];
 let S = {}, status = {}, lastId = 0, touched = {}, notes = [], previewWanted = false;
 
 // ---------- build dynamic controls ----------
@@ -465,6 +471,14 @@ $("#room").addEventListener("change", e => send("sonos.speaker", e.target.value 
 $$("[data-mode]").forEach(b => b.addEventListener("click", () => { send("audio.mode", b.dataset.mode); render(); }));
 $$("[data-preset]").forEach(b => b.addEventListener("click", () => { send("camera.preset", b.dataset.preset); render(); }));
 $$("[data-lfrom]").forEach(b => b.addEventListener("click", () => { send("mapping.length_from", b.dataset.lfrom); render(); }));
+const SETS = {arcade: {alpha: "boom", beta: "warble", muon: "zap", electron: "blip"},
+              classic: {alpha: "bell", beta: "pluck", muon: "glass", electron: "tick"}};
+$$("[data-set]").forEach(b => b.addEventListener("click", () => {
+  send("audio.sound_set", b.dataset.set);
+  for (const [k, v] of Object.entries(SETS[b.dataset.set]))       // show it at once
+    if (S[`audio.instruments.${k}`] !== "mute") { S[`audio.instruments.${k}`] = v; touched[`audio.instruments.${k}`] = Date.now(); $(`#in-${k}`).value = v; }
+  S["audio.sound_set"] = b.dataset.set; render();
+}));
 $$("[data-hear]").forEach(b => b.addEventListener("click", async () => {
   const res = await act("hear", {kind: b.dataset.hear});
   if (res.note) {
@@ -529,6 +543,11 @@ function render() {
   $("#bpm-row").hidden = S["audio.mode"] !== "beat";
   $$("[data-preset]").forEach(b => b.setAttribute("aria-pressed", b.dataset.preset === S["camera.preset"]));
   $$("[data-lfrom]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lfrom === S["mapping.length_from"]));
+  $$("[data-set]").forEach(b => b.setAttribute("aria-pressed", b.dataset.set === S["audio.sound_set"]));
+  $("#set-help").textContent = {
+    arcade: "Square waves and crunchy noise, like a 1970s arcade board. Alpha booms, muon zaps, beta warbles, electron blips.",
+    classic: "Soft synth tones: bell, pluck, glass and tick.",
+  }[S["audio.sound_set"]] || "A mix of sounds. Tap a set to switch all four.";
   const pf = S["mapping.pitch_from"], rev = S["mapping.pitch_reverse"];
   $("#pfrom-help").textContent = {
     angle: "Steep trails play higher than flat ones.",
@@ -655,7 +674,7 @@ const GRAIN = (() => {                       // fixed film grain, drawn once
   for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i+1] = d.data[i+2] = v; d.data[i+3] = 10; }
   g.putImageData(d, 0, 0); return c;
 })();
-const DRAW_ON = {bell: 0.06, glass: 0.035, pluck: 0.12, tick: 0.07};
+const DRAW_ON = {bell: 0.06, glass: 0.035, pluck: 0.12, tick: 0.07, boom: 0.05, zap: 0.025, warble: 0.12, blip: 0.05};
 function envelope(it, age) {                 // brightness follows the note's own shape
   const d = it.dur;
   switch (it.inst) {
@@ -663,6 +682,10 @@ function envelope(it, age) {                 // brightness follows the note's ow
     case "glass": return age < 0.25 ? Math.sin(age / 0.25 * Math.PI / 2) : Math.max(0, Math.exp(-(age - 0.25) / (0.6 * d)));
     case "pluck": return Math.exp(-age / (0.25 * d));
     case "tick": return Math.exp(-age / 0.06);
+    case "boom": return Math.min(1, Math.exp(-age / (0.35 * d)) * (1 + 0.25 * Math.sin(age * 90) * Math.exp(-age / 0.2)));
+    case "zap": return age < 0.05 ? 1 : Math.exp(-(age - 0.05) / (0.55 * d));
+    case "warble": return Math.exp(-age / (0.5 * d)) * (0.8 + 0.2 * Math.sin(2 * Math.PI * 7.5 * age));
+    case "blip": return Math.exp(-age / 0.05);
     default: return Math.exp(-age / 0.3);
   }
 }
