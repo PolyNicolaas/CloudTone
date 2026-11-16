@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloudtone"
-version = "0.1.0"
+version = "0.2.0"
 description = "Watch a cloud chamber with a Raspberry Pi camera and turn particle tracks into music (local or Sonos)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,9 @@ cloudtone = "cloudtone.main:main"
 
 [tool.setuptools]
 packages = ["cloudtone"]
+
+[tool.setuptools.package-data]
+cloudtone = ["web/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

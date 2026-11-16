@@ -1,4 +1,4 @@
-# CloudTone design (v0.1)
+# CloudTone design (v0.2)
 
 A Raspberry Pi watches a cloud chamber, spots each new condensation trail, works
 out what particle probably made it, and plays a note shaped by the trail. The
@@ -88,7 +88,7 @@ leave faint lines. So the "speed" information arrives as loudness and timbre.
 ## Sonos
 
 The Pi runs a never-ending MP3 stream (`http://<pi>:8765/stream.mp3`, made with
-`lameenc`) and SoCo tells the chosen room's group coordinator to play it as
+`lameenc`, encoded only while someone is listening) and SoCo tells the chosen room's group coordinator to play it as
 radio. Notes are mixed into the stream continuously.
 
 | Option | Latency | Overlap / timing | Verdict |
@@ -100,7 +100,19 @@ radio. Notes are mixed into the stream continuously.
 
 You can run both at once (`outputs: [local, sonos]`).
 
-`/status` on the same port returns the recent events and counts as JSON.
+## Phone control page
+
+Served by the Pi on the same port as the stream (`web.py`, standard library only).
+
+| Group | Controls |
+|---|---|
+| Play | volume, mute, pause, sensitivity, scale, key, timing (free or on the beat plus tempo), echo, instrument per particle (or silent), Sonos on/off, room, speaker volume, Pi speaker on/off, "Listen here" |
+| Setup | scale calibration (tap two ruler marks), crop (drag a box), background reset, exposure, gain, focus, detail preset (restart) |
+| Shown | live annotated view, a scrolling score of the last 30 s of notes, counts per particle, tracks per minute, fps |
+| config.yaml only | classifier limits, filter internals, mapping curves |
+
+Every change applies immediately and is written to `config.yaml` atomically.
+The preview JPEGs are only rendered while a page is watching.
 
 ## Performance
 
@@ -111,11 +123,10 @@ headroom, drop to 480×360 or set an ROI.
 
 ## Roadmap / candidate features
 
-1. **Phone web UI**: live annotated MJPEG preview, counts, and sliders for threshold and classifier limits (tuning by SSH is painful).
-2. **Calibration helper**: click two ruler marks to set `px_per_mm`; draw the ROI.
-3. **Event log to CSV/SQLite**: real data, plus training data for a learned classifier.
-4. **MIDI / OSC output**: drive real synths or a DAW instead of the built-in voices.
-5. **Musical modes**: quantise to a tempo grid; a drone whose density follows the event rate.
-6. **Physics extras**: alpha direction (Bragg peak = brighter end); kink and fork detection (decays, δ-rays); a magnet under the plate makes curvature reveal charge sign.
-7. **Crossing-track de-duplication** for busy chambers.
-8. Chamber telemetry (plate temperature) overlaid and logged.
+1. ~~Phone web UI~~ and ~~calibration helper~~: done in v0.2.
+2. **Event log to CSV/SQLite**: real data, plus training data for a learned classifier.
+3. **MIDI / OSC output**: drive real synths or a DAW instead of the built-in voices.
+4. **Musical modes**: a drone whose density follows the event rate.
+5. **Physics extras**: alpha direction (Bragg peak = brighter end); kink and fork detection (decays, δ-rays); a magnet under the plate makes curvature reveal charge sign.
+6. **Crossing-track de-duplication** for busy chambers.
+7. Chamber telemetry (plate temperature) overlaid and logged.

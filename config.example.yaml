@@ -24,6 +24,10 @@ classify:
 
 audio:
   outputs: [sonos]        # local needs a USB/I2S DAC on a Pi Zero 2 W (no headphone jack)
+  mode: free              # free | beat
+  bpm: 96
+  echo: 0.3
+  instruments: {alpha: bell, beta: pluck, muon: glass, electron: tick}   # or mute
   root_hz: 110            # A2
   scale: minor_pentatonic # major_pentatonic | dorian | whole_tone | chromatic
   master_gain: 0.6
@@ -31,4 +35,6 @@ audio:
 sonos:
   speaker: Living Room    # room name; omit for the first one found (`cloudtone sonos-list`)
   volume: 25
-  port: 8765
+
+web:
+  port: 8765              # phone page: http://<pi-address>:8765/

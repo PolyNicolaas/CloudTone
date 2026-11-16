@@ -50,8 +50,16 @@ class Note:
     kind: str
 
 
-def event_to_note(e: TrackEvent, root_hz=110.0, scale="minor_pentatonic") -> Note:
+INSTRUMENTS = ("bell", "pluck", "glass", "tick")
+
+
+def event_to_note(e: TrackEvent, root_hz=110.0, scale="minor_pentatonic",
+                  instruments: dict | None = None) -> Note | None:
+    """Returns None when this particle type is muted."""
     octave, base_gain, inst = VOICES.get(e.kind, VOICES["unknown"])
+    inst = (instruments or {}).get(e.kind, inst)
+    if inst == "mute":
+        return None
     steps = SCALES[scale]
     span = 2 * len(steps)
     deg = int(np.clip(e.angle_deg / 180.0 * span, 0, span - 1))

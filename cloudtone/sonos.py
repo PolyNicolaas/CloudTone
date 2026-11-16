@@ -8,12 +8,10 @@ laggy and choppy. A continuous stream costs a fixed buffer delay (typically
 """
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import socket
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .audio import Sink, to_int16
 
@@ -21,9 +19,10 @@ log = logging.getLogger(__name__)
 
 
 class StreamHub(Sink):
-    """Encodes mixer blocks to MP3 and fans them out to HTTP listeners."""
+    """Encodes mixer blocks to MP3 and fans them out to HTTP listeners
+    (Sonos, or a phone's "Listen here"). Costs nothing while nobody listens."""
 
-    def __init__(self, sr: int, bitrate_kbps=128, port=8765, status_fn=None):
+    def __init__(self, sr: int, bitrate_kbps=128):
         import lameenc
 
         self.enc = lameenc.Encoder()
@@ -33,50 +32,20 @@ class StreamHub(Sink):
         self.enc.set_quality(7)          # fast; fine for tones, easy on a Pi Zero
         self.clients: set[queue.Queue] = set()
         self.lock = threading.Lock()
-        self.port = port
-        hub = self
 
-        class Handler(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.0"   # Sonos is happiest with a plain close-delimited body
+    def subscribe(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=256)
+        with self.lock:
+            self.clients.add(q)
+        return q
 
-            def log_message(self, fmt, *args):
-                log.debug("http: " + fmt, *args)
-
-            def do_GET(self):
-                if self.path.startswith("/status") and status_fn:
-                    body = json.dumps(status_fn(), indent=1).encode()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
-                if not self.path.startswith("/stream.mp3"):
-                    self.send_error(404)
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", "audio/mpeg")
-                self.send_header("icy-name", "CloudTone")
-                self.send_header("Cache-Control", "no-cache")
-                self.end_headers()
-                q: queue.Queue = queue.Queue(maxsize=256)
-                with hub.lock:
-                    hub.clients.add(q)
-                log.info("stream listener connected: %s", self.client_address[0])
-                try:
-                    while True:
-                        self.wfile.write(q.get())
-                except (BrokenPipeError, ConnectionResetError, OSError):
-                    pass
-                finally:
-                    with hub.lock:
-                        hub.clients.discard(q)
-                    log.info("stream listener left: %s", self.client_address[0])
-
-        self.server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-        self.server.daemon_threads = True
-        threading.Thread(target=self.server.serve_forever, name="http", daemon=True).start()
+    def unsubscribe(self, q: queue.Queue) -> None:
+        with self.lock:
+            self.clients.discard(q)
 
     def write(self, block):
+        if not self.clients:
+            return
         data = bytes(self.enc.encode(to_int16(block)))
         if not data:
             return
@@ -86,9 +55,6 @@ class StreamHub(Sink):
                     q.put_nowait(data)
                 except queue.Full:          # slow listener: drop rather than stall the mixer
                     pass
-
-    def close(self):
-        self.server.shutdown()
 
 
 def lan_ip(towards: str = "8.8.8.8") -> str:
@@ -117,7 +83,7 @@ def find_speaker(name: str | None = None, timeout=5):
 def list_speakers(timeout=5) -> list[str]:
     import soco
 
-    return sorted(f"{z.player_name}  ({z.ip_address})" for z in (soco.discover(timeout=timeout) or []))
+    return sorted({z.player_name for z in (soco.discover(timeout=timeout) or [])})
 
 
 def start_on_sonos(cfg, port: int):

@@ -55,16 +55,30 @@ class AudioConfig:
     scale: str = "minor_pentatonic"   # see sonify.SCALES
     master_gain: float = 0.6
     max_voices: int = 16
-    outputs: list[str] = field(default_factory=lambda: ["local"])  # "local", "sonos"
+    outputs: list[str] = field(default_factory=lambda: ["sonos"])  # "local", "sonos"
+    muted: bool = False
+    mode: str = "free"                # "free" = play on arrival, "beat" = snap to a tempo grid
+    bpm: int = 96
+    echo: float = 0.3                 # 0..0.8
+    # instrument per particle: bell | pluck | glass | tick | mute
+    instruments: dict = field(default_factory=lambda: {
+        "alpha": "bell", "beta": "pluck", "muon": "glass", "electron": "tick"})
 
 
 @dataclass
 class SonosConfig:
     speaker: str | None = None   # room name, e.g. "Living Room"; None = first found
-    port: int = 8765
     bitrate_kbps: int = 128
     volume: int | None = None    # set speaker volume on connect (0-100)
     host_ip: str | None = None   # override auto-detected LAN IP of the Pi
+
+
+@dataclass
+class WebConfig:
+    enabled: bool = True
+    port: int = 8765          # phone page, preview, settings API and the MP3 stream
+    preview_fps: int = 6
+    preview_width: int = 480
 
 
 @dataclass
@@ -74,6 +88,7 @@ class Config:
     classify: ClassifyConfig = field(default_factory=ClassifyConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     sonos: SonosConfig = field(default_factory=SonosConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
 
 def _merge(obj: Any, data: dict) -> None:
@@ -84,6 +99,8 @@ def _merge(obj: Any, data: dict) -> None:
         current = getattr(obj, key)
         if is_dataclass(current) and isinstance(value, dict):
             _merge(current, value)
+        elif isinstance(current, dict) and isinstance(value, dict):
+            current.update(value)
         else:
             setattr(obj, key, value)
 
@@ -96,3 +113,13 @@ def load_config(path: str | Path | None = None) -> Config:
         with open(path) as fh:
             _merge(cfg, yaml.safe_load(fh) or {})
     return cfg
+
+
+def save_config(cfg: Config, path: str | Path) -> None:
+    import yaml
+    from dataclasses import asdict
+
+    tmp = Path(str(path) + ".tmp")
+    with open(tmp, "w") as fh:
+        yaml.safe_dump(asdict(cfg), fh, sort_keys=False)
+    tmp.replace(path)          # atomic: a power cut never leaves half a config

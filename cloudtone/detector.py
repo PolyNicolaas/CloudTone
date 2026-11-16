@@ -25,7 +25,7 @@ class TrackEvent:
     brightness: float     # mean grey levels above background (ionisation proxy)
     area_px: int
     clipped: bool         # touches the frame edge (true length unknown)
-    bbox: tuple[int, int, int, int]
+    bbox: tuple[int, int, int, int]   # full-frame pixels, even when an ROI is set
     kind: str = "unknown"
     confidence: float = 0.0
     extra: dict = field(default_factory=dict)
@@ -152,6 +152,8 @@ class TrackDetector:
             m = measure(np.column_stack([xs, ys]), diff[ys, xs], cfg.px_per_mm)
             bbox = (int(xs.min()), int(ys.min()), int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1))
             clipped = bbox[0] <= 1 or bbox[1] <= 1 or bbox[0] + bbox[2] >= W - 1 or bbox[1] + bbox[3] >= H - 1
+            ox, oy = (cfg.roi[0], cfg.roi[1]) if cfg.roi else (0, 0)
+            bbox = (bbox[0] + ox, bbox[1] + oy, bbox[2], bbox[3])     # full-frame pixels
             events.append(TrackEvent(id=self.next_id, t=t, x=m.pop("x") / W, y=m.pop("y") / H,
                                      clipped=bool(clipped), bbox=bbox, **m))
             self.next_id += 1

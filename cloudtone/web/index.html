@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141729">
+<title>CloudTone</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #141729;      /* chamber dark */
+    --plate: #1d2137;    /* raised surfaces */
+    --line: #2d3252;     /* dividers, slider tracks */
+    --frost: #e6e9f4;    /* primary text */
+    --vapour: #8e95b5;   /* secondary text */
+    --alpha: #ffb35c;
+    --beta: #5cc8ff;
+    --muon: #cff5e1;
+    --electron: #ff6fd8;
+    --r-sm: 6px;
+    --r-lg: 14px;
+    font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--ink); color: var(--frost); }
+  body { font-size: 16px; line-height: 1.45; -webkit-font-smoothing: antialiased;
+         padding-bottom: env(safe-area-inset-bottom); }
+  main { max-width: 560px; margin: 0 auto; }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--beta); outline-offset: 2px; }
+
+  /* ---------- hero: the chamber ---------- */
+  .chamber { position: relative; background: #05060c; aspect-ratio: 4 / 3; overflow: hidden; }
+  .chamber img, .chamber canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .chamber img { object-fit: contain; }
+  .chamber canvas { touch-action: none; }
+  .chamber .state { position: absolute; left: 12px; top: 10px; display: flex; gap: 8px; align-items: center;
+                    font-size: 14px; color: var(--frost); text-shadow: 0 1px 2px #000; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muon); }
+  .paused .dot { background: var(--vapour); }
+  .chamber .hint { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px;
+                   background: linear-gradient(transparent, rgba(5,6,12,.92)); font-size: 14px; display: none; }
+  .chamber.tool .hint { display: block; }
+  .offline { position: absolute; inset: 0; display: grid; place-items: center; color: var(--vapour);
+             font-size: 15px; text-align: center; padding: 24px; }
+
+  /* the score: every note that played, scrolling left */
+  .score { display: block; width: 100%; height: 72px; background: #0e1020; }
+
+  .legend { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+  .chip { padding: 10px 12px 12px; position: relative; }
+  .chip::before { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 3px;
+                  background: var(--c); border-radius: 0 0 2px 2px; opacity: .55; transition: opacity .6s, box-shadow .6s; }
+  .chip.hit::before { opacity: 1; box-shadow: 0 0 14px 2px var(--c); transition: none; }
+  .chip b { display: block; font-weight: 600; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .chip span { font-size: 13px; color: var(--vapour); }
+
+  /* ---------- transport ---------- */
+  .transport { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 14px 16px 4px; }
+  .btn { min-height: 48px; border: 1px solid var(--line); background: var(--plate); border-radius: var(--r-lg);
+         padding: 0 14px; cursor: pointer; font-weight: 500; }
+  .btn[aria-pressed="true"] { background: var(--frost); color: var(--ink); border-color: var(--frost); }
+  .btn.quiet { background: transparent; }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  .tabs { display: flex; gap: 4px; margin: 14px 16px 0; padding: 4px; background: var(--plate); border-radius: var(--r-lg); }
+  .tabs button { flex: 1; min-height: 40px; border: 0; background: transparent; border-radius: 10px; cursor: pointer;
+                 color: var(--vapour); font-weight: 500; }
+  .tabs button[aria-selected="true"] { background: var(--line); color: var(--frost); }
+
+  /* ---------- controls ---------- */
+  section { padding: 8px 16px 4px; }
+  h2 { font-size: 15px; font-weight: 600; color: var(--vapour); margin: 22px 0 4px; }
+  .row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row > label, .row > .lab { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .row output, .row .val { color: var(--vapour); font-variant-numeric: tabular-nums; font-size: 15px; }
+  .row p { margin: 4px 0 0; font-size: 14px; color: var(--vapour); }
+  .inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 32px; background: transparent; margin: 4px 0 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; }
+  input[type=range]::-moz-range-track { height: 4px; background: var(--line); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px;
+          border-radius: 50%; background: var(--frost); border: 0; }
+  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--frost); border: 0; }
+
+  select { background: var(--plate); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; min-height: 40px; }
+  .seg { display: inline-flex; background: var(--plate); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 7px; cursor: pointer; color: var(--vapour); }
+  .seg button[aria-pressed="true"] { background: var(--line); color: var(--frost); }
+
+  .switch { position: relative; width: 48px; height: 28px; flex: none; }
+  .switch input { opacity: 0; position: absolute; inset: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 14px; transition: background .15s; }
+  .switch i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%;
+                     background: var(--vapour); transition: transform .15s, background .15s; }
+  .switch input:checked + i { background: var(--muon); }
+  .switch input:checked + i::after { transform: translateX(20px); background: var(--ink); }
+  .switch input:focus-visible + i { outline: 2px solid var(--beta); outline-offset: 2px; }
+
+  .particle { display: grid; grid-template-columns: 4px 1fr auto; gap: 12px; align-items: center; }
+  .particle .bar { align-self: stretch; border-radius: 2px; background: var(--c); }
+  .particle p { margin: 0; }
+
+  .banner { margin: 12px 16px 0; padding: 12px 14px; border-radius: var(--r-lg); background: var(--plate);
+            border: 1px solid var(--alpha); display: none; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; }
+  .banner.show { display: flex; }
+  .status-error { color: var(--alpha); }
+  .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+           background: var(--frost); color: var(--ink); padding: 10px 16px; border-radius: 22px; font-size: 15px;
+           opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; }
+  .toast.show { opacity: 1; }
+  [hidden] { display: none !important; }
+  footer { padding: 28px 16px 40px; color: var(--vapour); font-size: 13px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chip::before, .switch i, .switch i::after, .toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="chamber" id="chamber">
+    <img id="preview" alt="Live view of the cloud chamber with detected tracks outlined">
+    <canvas id="tool" aria-hidden="true"></canvas>
+    <div class="offline" id="offline" hidden>Waiting for the camera. Check that CloudTone is running on the Pi.</div>
+    <div class="state" id="state"><span class="dot"></span><span id="statetext">Connecting</span></div>
+    <div class="hint" id="hint"></div>
+  </div>
+  <canvas class="score" id="score" aria-label="Notes played in the last 30 seconds"></canvas>
+  <div class="legend" id="legend">
+    <div class="chip" data-kind="alpha" style="--c:var(--alpha)"><b>0</b><span>Alpha</span></div>
+    <div class="chip" data-kind="beta" style="--c:var(--beta)"><b>0</b><span>Beta</span></div>
+    <div class="chip" data-kind="muon" style="--c:var(--muon)"><b>0</b><span>Muon</span></div>
+    <div class="chip" data-kind="electron" style="--c:var(--electron)"><b>0</b><span>Electron</span></div>
+  </div>
+
+  <div class="transport">
+    <button class="btn" id="pause" aria-pressed="false">Pause</button>
+    <button class="btn" id="mute" aria-pressed="false">Mute</button>
+    <button class="btn" id="listen" aria-pressed="false">Listen here</button>
+  </div>
+  <audio id="player" preload="none"></audio>
+
+  <div class="banner" id="restart"><span>Restart CloudTone to use the new detail level.</span>
+    <button class="btn" data-action="restart">Restart</button></div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" aria-controls="play" id="tab-play">Play</button>
+    <button role="tab" aria-selected="false" aria-controls="setup" id="tab-setup">Setup</button>
+  </div>
+
+  <!-- ================= PLAY ================= -->
+  <div id="play" role="tabpanel" aria-labelledby="tab-play">
+    <section>
+      <div class="row"><label for="vol">Volume <output id="vol-out"></output></label>
+        <input type="range" id="vol" min="0" max="100" step="1" data-key="audio.master_gain" data-scale="0.01"></div>
+      <div class="row"><label for="sens">Sensitivity <output id="sens-out"></output></label>
+        <input type="range" id="sens" min="0" max="100" step="1">
+        <p>Higher picks up fainter trails, and more noise.</p></div>
+    </section>
+
+    <section>
+      <h2>Sound</h2>
+      <div class="row inline"><label for="scale">Scale</label>
+        <select id="scale" data-key="audio.scale">
+          <option value="minor_pentatonic">Minor pentatonic</option>
+          <option value="major_pentatonic">Major pentatonic</option>
+          <option value="dorian">Dorian</option>
+          <option value="whole_tone">Whole tone</option>
+          <option value="chromatic">Chromatic</option>
+        </select></div>
+      <div class="row inline"><label for="key">Key</label><select id="key"></select></div>
+      <div class="row">
+        <div class="lab inline"><span id="timing-label">Timing</span>
+          <span class="seg" role="group" aria-labelledby="timing-label">
+            <button data-mode="free" aria-pressed="true">As they arrive</button>
+            <button data-mode="beat" aria-pressed="false">On the beat</button>
+          </span></div>
+        <div id="bpm-row" hidden><label for="bpm" style="margin-top:10px">Tempo <output id="bpm-out"></output></label>
+          <input type="range" id="bpm" min="40" max="200" step="1" data-key="audio.bpm"></div>
+      </div>
+      <div class="row"><label for="echo">Echo <output id="echo-out"></output></label>
+        <input type="range" id="echo" min="0" max="80" step="1" data-key="audio.echo" data-scale="0.01"></div>
+    </section>
+
+    <section>
+      <h2>Particles</h2>
+      <div id="particles"></div>
+    </section>
+
+    <section>
+      <h2>Where it plays</h2>
+      <div class="row">
+        <div class="inline"><div><div>Sonos</div><p id="sonos-status">Off</p></div>
+          <label class="switch"><input type="checkbox" id="sonos-on" data-key="outputs.sonos" aria-label="Play on Sonos"><i></i></label></div>
+        <div id="sonos-more">
+          <div class="inline" style="margin-top:12px"><label for="room">Room</label>
+            <span><select id="room"><option value="">First one found</option></select>
+            <button class="btn quiet" id="find-rooms" style="min-height:40px">Find rooms</button></span></div>
+          <label for="svol" style="margin-top:12px">Speaker volume <output id="svol-out"></output></label>
+          <input type="range" id="svol" min="0" max="100" step="1" data-key="sonos.volume">
+          <p>Sonos plays about 3 seconds behind the chamber.</p>
+        </div>
+      </div>
+      <div class="row inline"><div><div>Pi speaker</div><p id="local-status">Off</p></div>
+        <label class="switch"><input type="checkbox" id="local-on" data-key="outputs.local" aria-label="Play on the Pi's speaker"><i></i></label></div>
+    </section>
+  </div>
+
+  <!-- ================= SETUP ================= -->
+  <div id="setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
+    <section>
+      <h2>Chamber</h2>
+      <div class="row"><div class="lab"><span>Scale</span><span class="val" id="ppm"></span></div>
+        <p>Lay a ruler on the plate, tap two marks on the view, then enter the distance between them.</p>
+        <div class="inline" style="margin-top:10px">
+          <button class="btn" id="measure">Measure scale</button>
+          <span id="measure-form" hidden><input id="mm" type="number" inputmode="decimal" min="1" placeholder="mm"
+            style="width:80px;background:var(--plate);border:1px solid var(--line);border-radius:6px;padding:8px">
+            <button class="btn" id="measure-save">Save</button></span>
+        </div></div>
+      <div class="row"><div class="lab"><span>Crop</span><span class="val" id="roi"></span></div>
+        <p>Drag a box around the chamber floor so walls and reflections are ignored.</p>
+        <div class="inline" style="margin-top:10px;justify-content:flex-start">
+          <button class="btn" id="crop">Draw crop</button>
+          <button class="btn quiet" data-action="clear_roi">Clear crop</button></div></div>
+      <div class="row"><div class="inline"><div><div>Background</div>
+        <p>Relearn the empty chamber after moving the camera or changing the light.</p></div>
+        <button class="btn" data-action="reset_background">Reset</button></div></div>
+    </section>
+
+    <section>
+      <h2>Camera</h2>
+      <p id="cam-note" hidden style="color:var(--vapour);font-size:14px;margin:4px 0">Camera controls apply to the Pi camera.
+        You're watching the simulator, so these are saved but have no effect yet.</p>
+      <div class="row"><label for="exp">Exposure <output id="exp-out"></output></label>
+        <input type="range" id="exp" min="0" max="100" step="1"></div>
+      <div class="row"><label for="gain">Gain <output id="gain-out"></output></label>
+        <input type="range" id="gain" min="1" max="16" step="0.1" data-key="camera.analogue_gain"></div>
+      <div class="row"><label for="focus">Focus <output id="focus-out"></output></label>
+        <input type="range" id="focus" min="2" max="15" step="0.1" data-key="camera.lens_position"></div>
+      <div class="row">
+        <div class="lab inline"><span id="detail-label">Detail</span>
+          <span class="seg" role="group" aria-labelledby="detail-label">
+            <button data-preset="light">Light</button><button data-preset="standard">Standard</button><button data-preset="detailed">Detailed</button>
+          </span></div>
+        <p>Light keeps a Pi Zero 2 W fast. Detailed needs a restart and more CPU.</p></div>
+      <div class="row"><div class="lab"><span>Running at</span><span class="val" id="fps"></span></div></div>
+    </section>
+    <footer>Particle-sorting limits and other fine-tuning live in config.yaml on the Pi.</footer>
+  </div>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const NOTES = ["A","A♯","B","C","C♯","D","D♯","E","F","F♯","G","G♯"];
+const COLORS = {alpha:"#ffb35c", beta:"#5cc8ff", muon:"#cff5e1", electron:"#ff6fd8", unknown:"#8e95b5"};
+const PARTICLES = [
+  ["alpha", "Alpha", "Short, thick, bright"],
+  ["beta", "Beta", "Thin and wandering"],
+  ["muon", "Muon", "Long and ruler-straight"],
+  ["electron", "Electron", "Tiny curl"],
+];
+const INSTR = [["bell","Bell"],["pluck","Pluck"],["glass","Glass"],["tick","Tick"],["mute","Silent"]];
+let S = {}, status = {}, lastId = 0, touched = {}, notes = [];
+
+// ---------- build dynamic controls ----------
+$("#key").innerHTML = NOTES.map((n, i) => `<option value="${(110 * 2 ** (i / 12)).toFixed(2)}">${n}</option>`).join("");
+$("#particles").innerHTML = PARTICLES.map(([k, name, desc]) => `
+  <div class="row particle" style="--c:${COLORS[k]}"><span class="bar"></span>
+    <div><label for="in-${k}">${name}</label><p>${desc}</p></div>
+    <select id="in-${k}" data-key="audio.instruments.${k}">${INSTR.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+  </div>`).join("");
+
+// ---------- talking to the Pi ----------
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  return r.json();
+}
+const timers = {};
+function send(key, value) {
+  touched[key] = Date.now();
+  S[key] = value;
+  clearTimeout(timers[key]);
+  timers[key] = setTimeout(async () => {
+    const res = await api("/api/settings", {[key]: value});
+    if (res.errors && res.errors[key]) toast(res.errors[key]);
+    $("#restart").classList.toggle("show", !!res.restart_needed);
+  }, 120);
+}
+async function act(action, args = {}) {
+  const res = await api("/api/action", {action, ...args});
+  if (res.error) toast(res.error);
+  return res;
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+// ---------- display formats ----------
+const sensToThr = v => 60 - v * 0.56, thrToSens = t => Math.round((60 - t) / 0.56);
+const expToUs = v => Math.round(100 * 2000 ** (v / 100)), usToExp = us => Math.round(100 * Math.log(us / 100) / Math.log(2000));
+const fmt = {
+  "vol": v => `${v}`, "sens": v => `${v}`, "bpm": v => `${v} bpm`, "echo": v => `${v}`,
+  "svol": v => `${v}`, "gain": v => `${(+v).toFixed(1)}×`,
+  "focus": v => `${Math.round(100 / v)} cm`, "exp": v => { const us = expToUs(v); return us >= 1000 ? `${(us / 1000).toFixed(us < 10000 ? 1 : 0)} ms` : `${us} µs`; },
+};
+function showOut(el) { const o = $(`#${el.id}-out`); if (o) o.textContent = fmt[el.id] ? fmt[el.id](el.value) : el.value; }
+
+// ---------- wire inputs ----------
+$$("[data-key]").forEach(el => {
+  const key = el.dataset.key, scale = +el.dataset.scale || 1;
+  const ev = el.type === "range" ? "input" : "change";
+  el.addEventListener(ev, () => {
+    showOut(el);
+    send(key, el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value * scale : el.value);
+  });
+});
+$("#sens").addEventListener("input", e => { showOut(e.target); send("detect.threshold", sensToThr(+e.target.value)); });
+$("#exp").addEventListener("input", e => { showOut(e.target); send("camera.exposure_us", expToUs(+e.target.value)); });
+$("#key").addEventListener("change", e => send("audio.root_hz", +e.target.value));
+$("#room").addEventListener("change", e => send("sonos.speaker", e.target.value || null));
+$$("[data-mode]").forEach(b => b.addEventListener("click", () => { send("audio.mode", b.dataset.mode); render(); }));
+$$("[data-preset]").forEach(b => b.addEventListener("click", () => { send("camera.preset", b.dataset.preset); render(); }));
+$$("[data-action]").forEach(b => b.addEventListener("click", async () => {
+  const res = await act(b.dataset.action);
+  if (!res.error) toast({reset_background: "Background reset", clear_roi: "Crop cleared", restart: "Restarting"}[b.dataset.action] || "Done");
+}));
+$("#pause").addEventListener("click", () => act(status.paused ? "resume" : "pause").then(poll));
+$("#mute").addEventListener("click", () => send("audio.muted", !S["audio.muted"]) || render());
+$("#find-rooms").addEventListener("click", async e => {
+  e.target.disabled = true; e.target.textContent = "Searching";
+  const res = await act("sonos_rooms");
+  e.target.disabled = false; e.target.textContent = "Find rooms";
+  if (res.rooms) {
+    $("#room").innerHTML = `<option value="">First one found</option>` + res.rooms.map(r => `<option>${r}</option>`).join("");
+    $("#room").value = S["sonos.speaker"] || "";
+    if (!res.rooms.length) toast("No Sonos rooms found on this network");
+  }
+});
+$("#listen").addEventListener("click", () => {
+  const p = $("#player"), on = p.paused;
+  if (on) { p.src = "/stream.mp3?" + Date.now(); p.play().catch(() => toast("Tap again to allow audio")); }
+  else { p.pause(); p.removeAttribute("src"); p.load(); }
+  $("#listen").setAttribute("aria-pressed", on);
+  if (on) toast("Playing here, a few seconds behind the chamber");
+});
+$$("[role=tab]").forEach(t => t.addEventListener("click", () => {
+  $$("[role=tab]").forEach(x => { x.setAttribute("aria-selected", x === t); $("#" + x.getAttribute("aria-controls")).hidden = x !== t; });
+}));
+
+// ---------- reflect state into the page ----------
+function setIfIdle(el, v) {
+  const key = el.dataset.key || el.id;
+  if (Date.now() - (touched[key] || 0) < 1500 || document.activeElement === el && el.type === "range") return;
+  if (el.type === "checkbox") el.checked = !!v; else el.value = v;
+  showOut(el);
+}
+function render() {
+  $$("[data-key]").forEach(el => {
+    const v = S[el.dataset.key]; if (v === undefined || v === null) return;
+    setIfIdle(el, el.dataset.scale ? Math.round(v / +el.dataset.scale) : v);
+  });
+  touched.sens = touched["detect.threshold"]; touched.exp = touched["camera.exposure_us"];
+  touched.key = touched["audio.root_hz"]; touched.room = touched["sonos.speaker"];
+  setIfIdle($("#sens"), thrToSens(S["detect.threshold"]));
+  setIfIdle($("#exp"), usToExp(S["camera.exposure_us"]));
+  const k = [...$("#key").options].reduce((a, o) => Math.abs(o.value - S["audio.root_hz"]) < Math.abs(a.value - S["audio.root_hz"]) ? o : a);
+  setIfIdle($("#key"), k.value);
+  if (S["sonos.speaker"] && ![...$("#room").options].some(o => o.value === S["sonos.speaker"]))
+    $("#room").insertAdjacentHTML("beforeend", `<option>${S["sonos.speaker"]}</option>`);
+  setIfIdle($("#room"), S["sonos.speaker"] || "");
+  $$("[data-mode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === S["audio.mode"]));
+  $("#bpm-row").hidden = S["audio.mode"] !== "beat";
+  $$("[data-preset]").forEach(b => b.setAttribute("aria-pressed", b.dataset.preset === S["camera.preset"]));
+  $("#mute").setAttribute("aria-pressed", !!S["audio.muted"]);
+  $("#mute").textContent = S["audio.muted"] ? "Unmute" : "Mute";
+  $("#sonos-more").hidden = !S["outputs.sonos"];
+  $("#ppm").textContent = `${(+S["detect.px_per_mm"]).toFixed(1)} px per mm`;
+  const roi = S["detect.roi"];
+  $("#roi").textContent = roi ? `${roi[2]} × ${roi[3]} px` : "Whole frame";
+}
+function renderStatus() {
+  const st = status, ch = $("#chamber");
+  ch.classList.toggle("paused", st.paused);
+  $("#pause").textContent = st.paused ? "Resume" : "Pause";
+  $("#pause").setAttribute("aria-pressed", st.paused);
+  $("#statetext").textContent = st.paused ? "Paused" : `Listening, ${st.per_min} tracks a minute`;
+  for (const [k, n] of Object.entries(st.counts)) $(`.chip[data-kind=${k}] b`).textContent = n;
+  const so = st.outputs.sonos, lo = st.outputs.local;
+  $("#sonos-status").textContent = so[0].toUpperCase() + so.slice(1);
+  $("#sonos-status").classList.toggle("status-error", so.startsWith("error"));
+  $("#local-status").textContent = lo.startsWith("error") ? "No speaker or audio board found on the Pi" : lo[0].toUpperCase() + lo.slice(1);
+  $("#local-status").classList.toggle("status-error", lo.startsWith("error"));
+  $("#fps").textContent = `${st.fps} frames a second, ${st.frame[0]} × ${st.frame[1]}`;
+  $("#cam-note").hidden = st.live_camera;
+  $("#restart").classList.toggle("show", st.restart_needed);
+}
+
+// ---------- the score ----------
+const score = $("#score"), sctx = score.getContext("2d");
+const WINDOW = 30;   // seconds shown
+function drawScore() {
+  const dpr = devicePixelRatio || 1, w = score.clientWidth, h = score.clientHeight;
+  if (score.width !== w * dpr) { score.width = w * dpr; score.height = h * dpr; }
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.clearRect(0, 0, w, h);
+  const now = performance.now() / 1000;
+  sctx.strokeStyle = "#1d2137"; sctx.lineWidth = 1;
+  for (let s = 0; s <= WINDOW; s += 5) { const x = w - (s / WINDOW) * w; sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, h); sctx.stroke(); }
+  notes = notes.filter(n => now - n.t < WINDOW + 4);
+  for (const n of notes) {
+    const x = w - ((now - n.t) / WINDOW) * w, len = Math.max(3, (n.dur / WINDOW) * w);
+    const y = h - 6 - (Math.log2(n.freq / 100) / 5.2) * (h - 12);
+    const age = now - n.t, glow = age < n.dur ? 1 : 0.55;
+    sctx.globalAlpha = glow; sctx.fillStyle = COLORS[n.kind] || COLORS.unknown;
+    sctx.beginPath(); sctx.roundRect(x, y - 2.5, len, 5, 2.5); sctx.fill();
+  }
+  sctx.globalAlpha = 1;
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches || notes.length) requestAnimationFrame(drawScore);
+}
+requestAnimationFrame(drawScore);
+
+function flash(kind) {
+  const c = $(`.chip[data-kind=${kind}]`); if (!c) return;
+  c.classList.add("hit"); clearTimeout(c._h); c._h = setTimeout(() => c.classList.remove("hit"), 140);
+}
+
+// ---------- polling ----------
+let first = true;
+async function poll() {
+  try {
+    const st = await api(`/api/state?since=${lastId}`);
+    S = {...st.settings, ...Object.fromEntries(Object.entries(S).filter(([k]) => Date.now() - (touched[k] || 0) < 1500))};
+    status = st.status;
+    if (st.last_id < lastId) { lastId = st.last_id; first = true; }   // CloudTone restarted
+    if (!first) for (const e of st.events) {
+      if (!e.freq) { flash(e.kind); continue; }
+      const t = performance.now() / 1000 + (e.delay || 0);
+      notes.push({kind: e.kind, freq: e.freq, dur: e.dur, t});
+      setTimeout(() => flash(e.kind), (e.delay || 0) * 1000);
+    }
+    first = false; lastId = st.last_id;
+    render(); renderStatus();
+    $("#offline").hidden = true;
+  } catch (err) {
+    $("#statetext").textContent = "Can't reach the Pi";
+  }
+}
+setInterval(poll, 400); poll();
+
+// preview: reconnect if it drops
+const img = $("#preview");
+function startPreview() { img.src = "/preview.mjpg?" + Date.now(); }
+img.addEventListener("error", () => { $("#offline").hidden = false; setTimeout(startPreview, 2000); });
+startPreview();
+
+// ---------- tap tools on the live view: measure and crop ----------
+const tool = $("#tool"), tctx = tool.getContext("2d");
+let mode = null, pts = [], drag = null;
+function imgRect() {       // where the image actually sits inside the letterboxed box
+  const box = tool.getBoundingClientRect(), [fw, fh] = status.frame || [4, 3];
+  const s = Math.min(box.width / fw, box.height / fh), w = fw * s, h = fh * s;
+  return {x: (box.width - w) / 2, y: (box.height - h) / 2, w, h, box};
+}
+function norm(ev) {
+  const r = imgRect();
+  return [Math.min(1, Math.max(0, (ev.clientX - r.box.left - r.x) / r.w)), Math.min(1, Math.max(0, (ev.clientY - r.box.top - r.y) / r.h))];
+}
+function drawTool() {
+  const dpr = devicePixelRatio || 1, b = tool.getBoundingClientRect();
+  tool.width = b.width * dpr; tool.height = b.height * dpr; tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  tctx.clearRect(0, 0, b.width, b.height);
+  const r = imgRect(), P = p => [r.x + p[0] * r.w, r.y + p[1] * r.h];
+  tctx.strokeStyle = COLORS.muon; tctx.fillStyle = COLORS.muon; tctx.lineWidth = 2;
+  if (mode === "measure") {
+    pts.forEach(p => { const [x, y] = P(p); tctx.beginPath(); tctx.arc(x, y, 6, 0, 7); tctx.stroke(); });
+    if (pts.length === 2) { tctx.beginPath(); tctx.moveTo(...P(pts[0])); tctx.lineTo(...P(pts[1])); tctx.stroke(); }
+  } else if (mode === "crop" && drag) {
+    const [x1, y1] = P(drag[0]), [x2, y2] = P(drag[1]);
+    tctx.setLineDash([6, 4]); tctx.strokeRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+  }
+}
+function setTool(m, hint) {
+  mode = m; pts = []; drag = null;
+  $("#chamber").classList.toggle("tool", !!m); $("#hint").textContent = hint || "";
+  $("#measure").textContent = m === "measure" ? "Cancel" : "Measure scale";
+  $("#crop").textContent = m === "crop" ? "Cancel" : "Draw crop";
+  $("#measure-form").hidden = true; drawTool();
+  if (m) $("#chamber").scrollIntoView({behavior: "smooth", block: "start"});
+}
+$("#measure").addEventListener("click", () => setTool(mode === "measure" ? null : "measure", "Tap the first ruler mark."));
+$("#crop").addEventListener("click", () => setTool(mode === "crop" ? null : "crop", "Drag a box around the chamber floor."));
+tool.addEventListener("pointerdown", ev => {
+  if (!mode) return;
+  if (mode === "measure") {
+    if (pts.length === 2) pts = [];
+    pts.push(norm(ev));
+    $("#hint").textContent = pts.length === 1 ? "Now tap the second mark." : "Enter the distance in Setup, then save.";
+    if (pts.length === 2) { $("#measure-form").hidden = false; $("#tab-setup").click(); $("#mm").focus(); }
+  } else { drag = [norm(ev), norm(ev)]; tool.setPointerCapture(ev.pointerId); }
+  drawTool();
+});
+tool.addEventListener("pointermove", ev => { if (mode === "crop" && drag) { drag[1] = norm(ev); drawTool(); } });
+tool.addEventListener("pointerup", async () => {
+  if (mode !== "crop" || !drag) return;
+  const [a, b] = drag, x = Math.min(a[0], b[0]), y = Math.min(a[1], b[1]);
+  const res = await act("set_roi", {x, y, w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1])});
+  if (!res.error) { toast("Crop saved"); setTool(null); poll(); } else { drag = null; drawTool(); }
+});
+$("#measure-save").addEventListener("click", async () => {
+  const res = await act("calibrate_scale", {p1: pts[0], p2: pts[1], mm: +$("#mm").value});
+  if (!res.error) { toast(`Scale saved: ${res.px_per_mm.toFixed(1)} px per mm`); setTool(null); poll(); }
+});
+addEventListener("resize", drawTool);
+</script>
+</body>
+</html>

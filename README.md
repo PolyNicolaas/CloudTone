@@ -27,15 +27,26 @@ nano config.yaml                                  # Sonos room, px_per_mm
 
 Run at boot: `sudo cp deploy/cloudtone.service /etc/systemd/system/ && sudo systemctl enable --now cloudtone`
 
+## Phone control page
+
+Open `http://<pi-address>:8765/` on your phone (same Wi-Fi).
+
+* **Play**: volume, sensitivity, scale and key, timing (as they arrive, or on the beat with a tempo),
+  echo, an instrument per particle (or silent), Sonos room and speaker volume, Pi speaker.
+* **Setup**: measure the scale with a ruler, drag a crop around the chamber floor, reset the
+  background, camera exposure/gain/focus, detail level.
+* **Listen here** plays the same stream Sonos gets, on the phone itself.
+
+Every change applies at once and is saved to `config.yaml`.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `cloudtone run [--source picamera\|sim\|file\|0] [--output local sonos] [--preview]` | live |
+| `cloudtone run [--source picamera\|sim\|file\|0] [--output local sonos]` | live, with the phone page |
 | `cloudtone demo [--seconds N] [--rate R] [--out NAME]` | offline render of a simulated chamber |
 | `cloudtone sonos-list` | list Sonos rooms |
 
-While running with Sonos output, `http://<pi>:8765/status` shows recent events.
 
 ## Setup tips
 
@@ -43,7 +54,7 @@ While running with Sonos output, `http://<pi>:8765/status` shows recent events.
 * **Lock exposure** (the default): auto-exposure flicker looks like tracks.
 * **Calibrate `px_per_mm`**: lay a ruler on the plate. All classifier limits are in mm.
 * **Tune with recordings**: record a clip (`rpicam-vid -t 60000 -o test.h264`),
-  then `cloudtone run --source test.h264 --output local --preview` on any computer.
+  then `cloudtone run --source test.h264` on any computer and open `http://localhost:8765/`.
 
 ## Layout
 
@@ -54,7 +65,10 @@ cloudtone/
   classifier.py  rule-based particle ID
   sonify.py      track -> note mapping and synthesis
   audio.py       mixer, local and WAV outputs
-  sonos.py       MP3 stream server and Sonos control (SoCo)
+  sonos.py       MP3 stream encoder and Sonos control (SoCo)
+  app.py         the running instrument: live settings, outputs, camera loop
+  web.py         phone page server, preview, settings API, audio stream
+  web/index.html the phone page
   simulator.py   synthetic chamber for development and tests
   main.py        CLI
 ```

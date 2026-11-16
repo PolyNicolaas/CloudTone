@@ -16,9 +16,10 @@ log = logging.getLogger(__name__)
 
 
 class Mixer:
-    def __init__(self, sr: int, master_gain=0.6, max_voices=16, echo=True):
+    def __init__(self, sr: int, master_gain=0.6, max_voices=16, echo=0.3):
         self.sr = sr
         self.gain = master_gain
+        self.samples_out = 0                    # audio clock, used for beat snapping
         self.max_voices = max_voices
         self._voices: list[list] = []          # [audio, position]
         self._lock = threading.Lock()
@@ -28,11 +29,11 @@ class Mixer:
         self._dbuf = np.zeros((self._dl, 2), np.float32)
         self._dpos = 0
 
-    def play(self, audio: np.ndarray) -> None:
+    def play(self, audio: np.ndarray, delay_samples: int = 0) -> None:
         with self._lock:
             if len(self._voices) >= self.max_voices:
                 self._voices.pop(0)            # steal the oldest voice
-            self._voices.append([audio, 0])
+            self._voices.append([audio, -int(delay_samples)])   # negative = not started yet
 
     def next_block(self, n: int) -> np.ndarray:
         out = np.zeros((n, 2), np.float32)
@@ -40,19 +41,29 @@ class Mixer:
             alive = []
             for v in self._voices:
                 a, p = v
-                k = min(n, len(a) - p)
-                out[:k] += a[p:p + k]
+                if p + n <= 0:                 # still waiting for its beat
+                    v[1] = p + n
+                    alive.append(v)
+                    continue
+                o = max(0, -p)                 # offset into this block where it starts
+                p = max(0, p)
+                k = min(n - o, len(a) - p)
+                out[o:o + k] += a[p:p + k]
                 v[1] = p + k
                 if v[1] < len(a):
                     alive.append(v)
             self._voices = alive
-        if self._echo and n <= self._dl:
+        self.samples_out += n
+        if self._echo > 0 and n <= self._dl:
             idx = (self._dpos + np.arange(n)) % self._dl
             d = self._dbuf[idx]
             self._dbuf[idx] = out + 0.35 * d[:, ::-1]   # ping-pong feedback
-            out += 0.3 * d
+            out += self._echo * d
             self._dpos = (self._dpos + n) % self._dl
         return np.tanh(out * self.gain).astype(np.float32)   # soft clip
+
+    def set_echo(self, amount: float) -> None:
+        self._echo = float(np.clip(amount, 0, 0.8))
 
 
 def to_int16(block: np.ndarray) -> bytes:
@@ -61,6 +72,7 @@ def to_int16(block: np.ndarray) -> bytes:
 
 class Sink:
     clocked = False          # True if write() blocks at the audio rate (sets the pace)
+    enabled = True
 
     def write(self, block: np.ndarray) -> None: ...
     def close(self) -> None: ...
@@ -118,16 +130,20 @@ class AudioEngine:
 
     def _run(self):
         period = self.block / self.mixer.sr
-        clocked = any(s.clocked for s in self.sinks)
         next_t = time.monotonic()
         while not self._stop.is_set():
+            clocked = any(s.clocked and s.enabled for s in self.sinks)
             blk = self.mixer.next_block(self.block)
-            for s in self.sinks:
+            for s in list(self.sinks):
+                if not s.enabled:
+                    continue
                 try:
                     s.write(blk)
                 except Exception:          # one bad sink shouldn't kill the rest
                     log.exception("audio sink %s failed", type(s).__name__)
-            if not clocked:
+            if clocked:
+                next_t = time.monotonic()
+            else:
                 next_t += period
                 delay = next_t - time.monotonic()
                 if delay > 0:
