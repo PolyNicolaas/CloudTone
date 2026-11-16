@@ -1,0 +1,34 @@
+# Copy to config.yaml and edit. Every key is optional; defaults are in cloudtone/config.py.
+
+camera:
+  source: picamera        # picamera | sim | path/to/video.mp4 | 0 (USB webcam)
+  width: 640
+  height: 480
+  fps: 20
+  exposure_us: 20000      # locked exposure; raise if trails are too faint
+  analogue_gain: 4.0
+  lens_position: 10.0     # Camera Module 3 manual focus, dioptres (10 = 10 cm)
+
+detect:
+  px_per_mm: 6.4          # CALIBRATE: put a ruler on the plate, measure pixels / mm
+  threshold: 14           # lower = more sensitive (and more noise)
+  min_area_px: 25
+  # roi: [40, 20, 560, 440]   # crop to the chamber floor [x, y, w, h]
+
+classify:
+  short_max_mm: 12
+  alpha_min_width_mm: 1.3
+  alpha_max_length_mm: 60
+  muon_min_length_mm: 35
+  muon_max_wiggle: 0.012
+
+audio:
+  outputs: [sonos]        # local needs a USB/I2S DAC on a Pi Zero 2 W (no headphone jack)
+  root_hz: 110            # A2
+  scale: minor_pentatonic # major_pentatonic | dorian | whole_tone | chromatic
+  master_gain: 0.6
+
+sonos:
+  speaker: Living Room    # room name; omit for the first one found (`cloudtone sonos-list`)
+  volume: 25
+  port: 8765

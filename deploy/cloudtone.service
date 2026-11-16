@@ -1,0 +1,16 @@
+[Unit]
+Description=CloudTone - cloud chamber sonification
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/cloudtone
+ExecStart=/home/pi/cloudtone/.venv/bin/cloudtone -c /home/pi/cloudtone/config.yaml run
+Restart=on-failure
+RestartSec=5
+# Sonos discovery and the stream server need the network; camera needs the video group
+SupplementaryGroups=video audio
+
+[Install]
+WantedBy=multi-user.target
