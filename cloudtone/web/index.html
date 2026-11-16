@@ -105,6 +105,11 @@
   .particle { display: grid; grid-template-columns: 4px 1fr auto; gap: 12px; align-items: center; }
   .particle .bar { align-self: stretch; border-radius: 2px; background: var(--c); }
   .particle p { margin: 0; }
+  .particle .pick { display: grid; gap: 6px; }
+  .hear { margin-top: 6px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--c);
+          background: transparent; color: var(--frost); font-size: 14px; cursor: pointer; }
+  .hear:active { background: var(--c); color: var(--ink); }
+
 
   .banner { margin: 12px 16px 0; padding: 12px 14px; border-radius: var(--r-lg); background: var(--plate);
             border: 1px solid var(--alpha); display: none; align-items: center; justify-content: space-between; gap: 12px; font-size: 15px; }
@@ -151,6 +156,7 @@
 
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" aria-controls="play" id="tab-play">Play</button>
+    <button role="tab" aria-selected="false" aria-controls="tone" id="tab-tone">Tone</button>
     <button role="tab" aria-selected="false" aria-controls="setup" id="tab-setup">Setup</button>
   </div>
 
@@ -189,11 +195,6 @@
     </section>
 
     <section>
-      <h2>Particles</h2>
-      <div id="particles"></div>
-    </section>
-
-    <section>
       <h2>Where it plays</h2>
       <div class="row">
         <div class="inline"><div><div>Sonos</div><p id="sonos-status">Off</p></div>
@@ -209,6 +210,73 @@
       </div>
       <div class="row inline"><div><div>Pi speaker</div><p id="local-status">Off</p></div>
         <label class="switch"><input type="checkbox" id="local-on" data-key="outputs.local" aria-label="Play on the Pi's speaker"><i></i></label></div>
+    </section>
+  </div>
+
+  <!-- ================= TONE ================= -->
+  <div id="tone" role="tabpanel" aria-labelledby="tab-tone" hidden>
+    <section>
+      <h2>Particles</h2>
+      <div id="particles"></div>
+    </section>
+
+    <section>
+      <h2>Pitch</h2>
+      <div class="row"><div class="inline"><label for="pfrom">Pitch follows</label>
+        <select id="pfrom" data-key="mapping.pitch_from">
+          <option value="angle">Angle of the trail</option>
+          <option value="length">Length of the trail</option>
+          <option value="height">Height in the chamber</option>
+          <option value="across">Position left to right</option>
+        </select></div>
+        <p id="pfrom-help"></p></div>
+      <div class="row"><label for="poct">Range <output id="poct-out"></output></label>
+        <input type="range" id="poct" min="1" max="4" step="0.5" data-key="mapping.pitch_octaves"></div>
+      <div class="row inline"><div><div>Reverse</div><p id="prev-help"></p></div>
+        <label class="switch"><input type="checkbox" id="prev" data-key="mapping.pitch_reverse" aria-label="Reverse pitch direction"><i></i></label></div>
+    </section>
+
+    <section>
+      <h2>Note length</h2>
+      <div class="row"><div class="lab inline"><span id="lfrom-label">Length follows</span>
+        <span class="seg" role="group" aria-labelledby="lfrom-label">
+          <button data-lfrom="length">Trail length</button><button data-lfrom="fixed">Same for all</button>
+        </span></div></div>
+      <div class="row"><label for="lscale">Longer or shorter <output id="lscale-out"></output></label>
+        <input type="range" id="lscale" min="0.25" max="3" step="0.05" data-key="mapping.length_scale"></div>
+    </section>
+
+    <section>
+      <h2>Loudness</h2>
+      <div class="row inline"><label for="lofrom">Loudness follows</label>
+        <select id="lofrom" data-key="mapping.loudness_from">
+          <option value="brightness">How dense the trail is</option>
+          <option value="length">Length of the trail</option>
+          <option value="even">Nothing, all even</option>
+        </select></div>
+      <div class="row"><label for="dyn">Contrast <output id="dyn-out"></output></label>
+        <input type="range" id="dyn" min="0" max="100" step="1" data-key="mapping.dynamics" data-scale="0.01">
+        <p>Low keeps notes at a similar level. High makes dense alphas ring out over faint muons.</p></div>
+    </section>
+
+    <section>
+      <h2>Character</h2>
+      <div class="row"><label for="stereo">Stereo spread <output id="stereo-out"></output></label>
+        <input type="range" id="stereo" min="0" max="100" step="1" data-key="mapping.stereo" data-scale="0.01">
+        <p>Notes pan to where the trail appeared in the chamber.</p></div>
+      <div class="row"><label for="wob">Wobble on curvy trails <output id="wob-out"></output></label>
+        <input type="range" id="wob" min="0" max="200" step="1" data-key="mapping.wobble" data-scale="0.01"></div>
+    </section>
+
+    <section>
+      <h2>Which trails play</h2>
+      <div class="row"><label for="mconf">Skip uncertain tracks <output id="mconf-out"></output></label>
+        <input type="range" id="mconf" min="0" max="90" step="5" data-key="mapping.min_confidence" data-scale="0.01"></div>
+      <div class="row"><label for="mlen">Skip trails shorter than <output id="mlen-out"></output></label>
+        <input type="range" id="mlen" min="0" max="30" step="1" data-key="mapping.min_length_mm"></div>
+      <div class="row"><label for="mnps">Most notes per second <output id="mnps-out"></output></label>
+        <input type="range" id="mnps" min="1" max="20" step="1" data-key="mapping.max_notes_per_sec">
+        <p>Keeps a busy chamber from turning into noise. Extra trails still count, silently.</p></div>
     </section>
   </div>
 
@@ -273,10 +341,15 @@ let S = {}, status = {}, lastId = 0, touched = {}, notes = [];
 
 // ---------- build dynamic controls ----------
 $("#key").innerHTML = NOTES.map((n, i) => `<option value="${(110 * 2 ** (i / 12)).toFixed(2)}">${n}</option>`).join("");
+const OCT = [[-1,"Lowest"],[0,"Low"],[1,"Middle"],[2,"High"],[3,"Higher"],[4,"Highest"]];
 $("#particles").innerHTML = PARTICLES.map(([k, name, desc]) => `
   <div class="row particle" style="--c:${COLORS[k]}"><span class="bar"></span>
-    <div><label for="in-${k}">${name}</label><p>${desc}</p></div>
-    <select id="in-${k}" data-key="audio.instruments.${k}">${INSTR.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+    <div><label for="in-${k}">${name}</label><p>${desc}</p>
+      <button class="hear" data-hear="${k}">Hear it</button></div>
+    <div class="pick">
+      <select id="in-${k}" data-key="audio.instruments.${k}">${INSTR.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+      <select id="oc-${k}" data-key="mapping.octaves.${k}" aria-label="${name} register">${OCT.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+    </div>
   </div>`).join("");
 
 // ---------- talking to the Pi ----------
@@ -311,6 +384,9 @@ const expToUs = v => Math.round(100 * 2000 ** (v / 100)), usToExp = us => Math.r
 const fmt = {
   "vol": v => `${v}`, "sens": v => `${v}`, "bpm": v => `${v} bpm`, "echo": v => `${v}`,
   "svol": v => `${v}`, "gain": v => `${(+v).toFixed(1)}×`,
+  "poct": v => `${+v} octave${+v === 1 ? "" : "s"}`, "lscale": v => `${(+v).toFixed(2).replace(/0$/, "")}×`,
+  "dyn": v => `${v}`, "stereo": v => `${v}`, "wob": v => `${v}`,
+  "mconf": v => +v ? `below ${v}% sure` : "Off", "mlen": v => +v ? `${v} mm` : "Off", "mnps": v => `${v}`,
   "focus": v => `${Math.round(100 / v)} cm`, "exp": v => { const us = expToUs(v); return us >= 1000 ? `${(us / 1000).toFixed(us < 10000 ? 1 : 0)} ms` : `${us} µs`; },
 };
 function showOut(el) { const o = $(`#${el.id}-out`); if (o) o.textContent = fmt[el.id] ? fmt[el.id](el.value) : el.value; }
@@ -321,7 +397,9 @@ $$("[data-key]").forEach(el => {
   const ev = el.type === "range" ? "input" : "change";
   el.addEventListener(ev, () => {
     showOut(el);
-    send(key, el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value * scale : el.value);
+    const v = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value * scale
+            : (el.value !== "" && !isNaN(el.value) ? +el.value : el.value);
+    send(key, v);
   });
 });
 $("#sens").addEventListener("input", e => { showOut(e.target); send("detect.threshold", sensToThr(+e.target.value)); });
@@ -330,6 +408,15 @@ $("#key").addEventListener("change", e => send("audio.root_hz", +e.target.value)
 $("#room").addEventListener("change", e => send("sonos.speaker", e.target.value || null));
 $$("[data-mode]").forEach(b => b.addEventListener("click", () => { send("audio.mode", b.dataset.mode); render(); }));
 $$("[data-preset]").forEach(b => b.addEventListener("click", () => { send("camera.preset", b.dataset.preset); render(); }));
+$$("[data-lfrom]").forEach(b => b.addEventListener("click", () => { send("mapping.length_from", b.dataset.lfrom); render(); }));
+$$("[data-hear]").forEach(b => b.addEventListener("click", async () => {
+  const res = await act("hear", {kind: b.dataset.hear});
+  if (res.note) {
+    notes.push({kind: b.dataset.hear, freq: +res.note.split(" ")[1], dur: res.dur, t: performance.now() / 1000});
+    flash(b.dataset.hear);
+    if ($("#player").paused && !S["outputs.sonos"] && !S["outputs.local"]) toast("Tap Listen here to hear it on this phone");
+  }
+}));
 $$("[data-action]").forEach(b => b.addEventListener("click", async () => {
   const res = await act(b.dataset.action);
   if (!res.error) toast({reset_background: "Background reset", clear_roi: "Crop cleared", restart: "Restarting"}[b.dataset.action] || "Done");
@@ -381,6 +468,20 @@ function render() {
   $$("[data-mode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === S["audio.mode"]));
   $("#bpm-row").hidden = S["audio.mode"] !== "beat";
   $$("[data-preset]").forEach(b => b.setAttribute("aria-pressed", b.dataset.preset === S["camera.preset"]));
+  $$("[data-lfrom]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lfrom === S["mapping.length_from"]));
+  const pf = S["mapping.pitch_from"], rev = S["mapping.pitch_reverse"];
+  $("#pfrom-help").textContent = {
+    angle: "Steep trails play higher than flat ones.",
+    length: "Longer trails play higher. Muons crossing the chamber sing on top.",
+    height: "Trails near the top of the view play higher.",
+    across: "Like a keyboard: left is low, right is high.",
+  }[pf] || "";
+  $("#prev-help").textContent = {
+    angle: rev ? "Flat trails play higher" : "Steep trails play higher",
+    length: rev ? "Longer trails play lower" : "Longer trails play higher",
+    height: rev ? "Lower in the view plays higher" : "Higher in the view plays higher",
+    across: rev ? "Right is low, left is high" : "Left is low, right is high",
+  }[pf] || "";
   $("#mute").setAttribute("aria-pressed", !!S["audio.muted"]);
   $("#mute").textContent = S["audio.muted"] ? "Unmute" : "Mute";
   $("#sonos-more").hidden = !S["outputs.sonos"];

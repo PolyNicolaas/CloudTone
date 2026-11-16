@@ -39,6 +39,11 @@ def cmd_run(args, cfg, cfg_path):
 def cmd_demo(args, cfg, _):
     """Deterministic offline render: no camera, no sound card, no real-time."""
     cfg.camera.source = "sim"
+    if args.set:
+        from .app import App
+        res = App(cfg, None).update(dict(kv.split("=", 1) for kv in args.set))
+        for k, err in res["errors"].items():
+            raise SystemExit(f"--set {k}: {err}")
     pipe = Pipeline(cfg)
     sr, fps = cfg.audio.sample_rate, cfg.camera.fps
     wav = WavSink(f"{args.out}.wav", sr)
@@ -80,6 +85,8 @@ def main(argv=None):
     d.add_argument("--rate", type=float, default=1.5, help="simulated tracks per second")
     d.add_argument("--seed", type=int, default=1)
     d.add_argument("--out", default="demo")
+    d.add_argument("--set", nargs="*", metavar="KEY=VALUE",
+                   help="try settings, e.g. mapping.pitch_from=length audio.mode=beat")
     sub.add_parser("sonos-list", help="list Sonos rooms")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

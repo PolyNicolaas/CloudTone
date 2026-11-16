@@ -53,29 +53,83 @@ class Note:
 INSTRUMENTS = ("bell", "pluck", "glass", "tick")
 
 
+# typical length (mm) and the note length it gets, per particle; "fixed" uses the typical value
+_TYPICAL = {"alpha": (35, 1.4), "muon": (80, 2.6), "beta": (40, 0.75), "electron": (6, 0.15)}
+
+
+def _norm_log(v, lo, hi):
+    return float(np.clip(np.log(max(v, lo) / lo) / np.log(hi / lo), 0, 1))
+
+
+def pitch_position(e: TrackEvent, source: str) -> float:
+    """0..1 position of this trace along the chosen pitch source."""
+    if source == "length":
+        return _norm_log(e.path_mm, 3, 120)      # log: short trails get room too
+    if source == "height":
+        return 1.0 - e.y                          # top of the chamber = high
+    if source == "across":
+        return e.x                                # left = low, like a keyboard
+    return e.angle_deg / 180.0
+
+
 def event_to_note(e: TrackEvent, root_hz=110.0, scale="minor_pentatonic",
-                  instruments: dict | None = None) -> Note | None:
-    """Returns None when this particle type is muted."""
-    octave, base_gain, inst = VOICES.get(e.kind, VOICES["unknown"])
+                  instruments: dict | None = None, m=None) -> Note | None:
+    """Returns None when this particle type is silent. `m` is a MappingConfig
+    (defaults reproduce the original mapping)."""
+    from .config import MappingConfig
+
+    m = m or MappingConfig()
+    base_oct, base_gain, inst = VOICES.get(e.kind, VOICES["unknown"])
     inst = (instruments or {}).get(e.kind, inst)
     if inst == "mute":
         return None
+    octave = int(m.octaves.get(e.kind, base_oct))
+
+    # pitch: chosen source -> scale degree across pitch_octaves
     steps = SCALES[scale]
-    span = 2 * len(steps)
-    deg = int(np.clip(e.angle_deg / 180.0 * span, 0, span - 1))
+    pos = pitch_position(e, m.pitch_from)
+    if m.pitch_reverse:
+        pos = 1.0 - pos
+    span = max(1, int(round(m.pitch_octaves * len(steps))))
+    deg = int(np.clip(pos * span, 0, span - 1))
     semis = 12 * (octave + deg // len(steps)) + steps[deg % len(steps)]
     freq = root_hz * 2 ** (semis / 12)
+
+    # note length
     L = e.path_mm
-    dur = {
-        "alpha": 0.6 + np.clip(L / 50, 0, 1.5) * 1.2,
-        "muon": 1.5 + np.clip(L / 100, 0, 1.2) * 1.5 + (0.5 if e.clipped else 0),
-        "beta": 0.3 + np.clip(L / 80, 0, 1) * 0.9,
-        "electron": 0.08 + np.clip(L / 12, 0, 1) * 0.15,
-    }.get(e.kind, 0.5)
-    loud = float(np.clip(e.brightness / 60.0, 0.3, 1.0))
-    return Note(freq=float(freq), dur=float(dur), gain=base_gain * loud,
-                pan=float(np.clip(e.x * 2 - 1, -1, 1)), instrument=inst,
-                vibrato_cents=float(min(60.0, e.wiggle * 3000)), kind=e.kind)
+    if m.length_from == "fixed":
+        dur = _TYPICAL.get(e.kind, (30, 0.5))[1]
+    else:
+        dur = {
+            "alpha": 0.6 + np.clip(L / 50, 0, 1.5) * 1.2,
+            "muon": 1.5 + np.clip(L / 100, 0, 1.2) * 1.5 + (0.5 if e.clipped else 0),
+            "beta": 0.3 + np.clip(L / 80, 0, 1) * 0.9,
+            "electron": 0.08 + np.clip(L / 12, 0, 1) * 0.15,
+        }.get(e.kind, 0.5)
+    dur = float(np.clip(dur * m.length_scale, 0.04, 8.0))
+
+    # loudness: source -> 0.3..1, then dynamics blends toward even
+    if m.loudness_from == "length":
+        loud = 0.3 + 0.7 * _norm_log(L, 3, 100)
+    elif m.loudness_from == "even":
+        loud = 1.0
+    else:
+        loud = float(np.clip(e.brightness / 60.0, 0.3, 1.0))
+    loud = 1.0 - m.dynamics * (1.0 - loud)
+
+    return Note(freq=float(freq), dur=dur, gain=base_gain * loud,
+                pan=float(np.clip((e.x * 2 - 1) * m.stereo, -1, 1)), instrument=inst,
+                vibrato_cents=float(min(120.0, e.wiggle * 3000 * m.wobble)), kind=e.kind)
+
+
+def sample_event(kind: str) -> TrackEvent:
+    """A typical trace of this particle, for the "hear it" button."""
+    L = _TYPICAL.get(kind, (30, 0.5))[0]
+    width = {"alpha": 2.2, "muon": 0.5, "beta": 0.6, "electron": 0.7}.get(kind, 0.6)
+    wig = {"beta": 0.03, "electron": 0.05}.get(kind, 0.003)
+    return TrackEvent(id=0, t=0, x=0.5, y=0.5, length_mm=L, path_mm=L, width_mm=width, angle_deg=70,
+                      wiggle=wig, brightness=90 if kind == "alpha" else 45, area_px=0,
+                      clipped=False, bbox=(0, 0, 0, 0), kind=kind, confidence=1.0)
 
 
 def _env(n, sr, attack, decay_tau):

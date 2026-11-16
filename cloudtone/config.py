@@ -66,6 +66,24 @@ class AudioConfig:
 
 
 @dataclass
+class MappingConfig:
+    """How a trace's shape becomes a note."""
+    pitch_from: str = "angle"        # angle | length | height | across
+    pitch_octaves: float = 2.0       # how many octaves the pitch source spans (1-4)
+    pitch_reverse: bool = False      # e.g. longer trail = lower note
+    length_from: str = "length"      # length | fixed
+    length_scale: float = 1.0        # multiplies every note length (0.25-3)
+    loudness_from: str = "brightness"  # brightness | length | even
+    dynamics: float = 0.7            # 0 = every note equally loud, 1 = full contrast
+    stereo: float = 1.0              # 0 = mono, 1 = pan follows position across the chamber
+    wobble: float = 1.0              # vibrato from curvy trails (0-2)
+    min_confidence: float = 0.0      # skip tracks the classifier is unsure about (0-0.9)
+    min_length_mm: float = 0.0       # skip tracks shorter than this
+    max_notes_per_sec: int = 8       # busy-chamber limiter
+    octaves: dict = field(default_factory=lambda: {"alpha": 0, "beta": 1, "muon": 2, "electron": 3})
+
+
+@dataclass
 class SonosConfig:
     speaker: str | None = None   # room name, e.g. "Living Room"; None = first found
     bitrate_kbps: int = 128
@@ -87,6 +105,7 @@ class Config:
     detect: DetectConfig = field(default_factory=DetectConfig)
     classify: ClassifyConfig = field(default_factory=ClassifyConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
+    mapping: MappingConfig = field(default_factory=MappingConfig)
     sonos: SonosConfig = field(default_factory=SonosConfig)
     web: WebConfig = field(default_factory=WebConfig)
 

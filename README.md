@@ -33,6 +33,10 @@ Open `http://<pi-address>:8765/` on your phone (same Wi-Fi).
 
 * **Play**: volume, sensitivity, scale and key, timing (as they arrive, or on the beat with a tempo),
   echo, an instrument per particle (or silent), Sonos room and speaker volume, Pi speaker.
+* **Tone**: how a trace becomes a note. Pick what sets pitch (angle, length, height or
+  left-to-right position), its range and direction; note length and loudness sources;
+  stereo spread and wobble; sound and octave per particle with a "Hear it" button; and
+  filters to skip uncertain or short trails or cap notes per second.
 * **Setup**: measure the scale with a ruler, drag a crop around the chamber floor, reset the
   background, camera exposure/gain/focus, detail level.
 * **Listen here** plays the same stream Sonos gets, on the phone itself.
@@ -44,7 +48,7 @@ Every change applies at once and is saved to `config.yaml`.
 | Command | What it does |
 |---|---|
 | `cloudtone run [--source picamera\|sim\|file\|0] [--output local sonos]` | live, with the phone page |
-| `cloudtone demo [--seconds N] [--rate R] [--out NAME]` | offline render of a simulated chamber |
+| `cloudtone demo [--seconds N] [--rate R] [--out NAME] [--set KEY=VALUE ...]` | offline render of a simulated chamber, optionally with different settings (e.g. `--set mapping.pitch_from=length audio.mode=beat`) |
 | `cloudtone sonos-list` | list Sonos rooms |
 
 

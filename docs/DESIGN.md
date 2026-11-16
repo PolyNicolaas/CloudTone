@@ -80,6 +80,21 @@ roadmap).
 | x position | stereo pan |
 | wiggle | vibrato depth |
 
+All of this is adjustable on the phone page's Tone tab (`mapping:` in config.yaml):
+
+| Setting | Options | Default |
+|---|---|---|
+| Pitch follows | angle, trail length (log), height in chamber, left to right | angle |
+| Range / reverse | 1–4 octaves; flip direction | 2, off |
+| Register per particle | octave offset −1 to +4 | alpha 0, beta 1, muon 2, electron 3 |
+| Note length | trail length or same for all; ×0.25–3 | trail length, ×1 |
+| Loudness follows | density (brightness), trail length, even; contrast 0–100 | density, 70 |
+| Stereo spread | 0–100 (pan from position across) | 100 |
+| Wobble | vibrato from curviness, 0–200 | 100 |
+| Which trails play | skip below a confidence; skip shorter than N mm; max notes per second | off, off, 8 |
+
+Skipped trails still count and still light the page; they just don't sound.
+
 **On "speed":** a camera can't measure particle speed, because the trail forms
 in milliseconds. Ionisation density is the physical stand-in: slow, heavy
 particles (alphas) ionise densely, while fast, minimum-ionising ones (muons)
@@ -106,7 +121,8 @@ Served by the Pi on the same port as the stream (`web.py`, standard library only
 
 | Group | Controls |
 |---|---|
-| Play | volume, mute, pause, sensitivity, scale, key, timing (free or on the beat plus tempo), echo, instrument per particle (or silent), Sonos on/off, room, speaker volume, Pi speaker on/off, "Listen here" |
+| Tone | everything in the mapping table above, plus sound per particle and a "Hear it" test note |
+| Play | volume, mute, pause, sensitivity, scale, key, timing (free or on the beat plus tempo), echo, Sonos on/off, room, speaker volume, Pi speaker on/off, "Listen here" |
 | Setup | scale calibration (tap two ruler marks), crop (drag a box), background reset, exposure, gain, focus, detail preset (restart) |
 | Shown | live annotated view, a scrolling score of the last 30 s of notes, counts per particle, tracks per minute, fps |
 | config.yaml only | classifier limits, filter internals, mapping curves |

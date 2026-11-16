@@ -19,7 +19,7 @@ from .camera import open_source
 from .classifier import Classifier
 from .config import Config, save_config
 from .detector import TrackDetector, TrackEvent
-from .sonify import INSTRUMENTS, SCALES, event_to_note, render
+from .sonify import INSTRUMENTS, SCALES, event_to_note, render, sample_event
 
 log = logging.getLogger("cloudtone")
 
@@ -38,6 +38,19 @@ SETTINGS = {
     "audio.bpm": (int, 40, 200),
     "audio.echo": (float, 0.0, 0.8),
     **{f"audio.instruments.{k}": (str, INSTRUMENTS + ("mute",)) for k in KINDS},
+    "mapping.pitch_from": (str, ("angle", "length", "height", "across")),
+    "mapping.pitch_octaves": (float, 1.0, 4.0),
+    "mapping.pitch_reverse": (bool,),
+    "mapping.length_from": (str, ("length", "fixed")),
+    "mapping.length_scale": (float, 0.25, 3.0),
+    "mapping.loudness_from": (str, ("brightness", "length", "even")),
+    "mapping.dynamics": (float, 0.0, 1.0),
+    "mapping.stereo": (float, 0.0, 1.0),
+    "mapping.wobble": (float, 0.0, 2.0),
+    "mapping.min_confidence": (float, 0.0, 0.9),
+    "mapping.min_length_mm": (float, 0.0, 30.0),
+    "mapping.max_notes_per_sec": (int, 1, 20),
+    **{f"mapping.octaves.{k}": (int, -1, 4) for k in KINDS},
     "detect.threshold": (float, 4.0, 60.0),
     "detect.px_per_mm": (float, 0.5, 50.0),
     "camera.exposure_us": (int, 100, 200_000),
@@ -83,16 +96,30 @@ class Pipeline:
         self.counts = collections.Counter()
         self.rng = np.random.default_rng()
         self.event_times: collections.deque = collections.deque(maxlen=2000)
+        self.played: collections.deque = collections.deque()   # note times, for the limiter
         self.next_id = 1          # survives detector resets, so the page never replays old events
 
     def step(self, frame, t) -> list[TrackEvent]:
         a = self.cfg.audio
         evs = [self.cls.classify(e) for e in self.det.process(frame, t)]
+        m = self.cfg.mapping
+        now = t          # frame time, so offline renders limit the same way as live
         for e in evs:
             e.id, self.next_id = self.next_id, self.next_id + 1
-            note = event_to_note(e, a.root_hz, a.scale, a.instruments)
             e.extra["note"] = None
+            note = None
+            while self.played and not (0 <= now - self.played[0] <= 1.0):
+                self.played.popleft()
+            if e.confidence < m.min_confidence:
+                e.extra["skipped"] = "uncertain"
+            elif e.path_mm < m.min_length_mm:
+                e.extra["skipped"] = "short"
+            elif len(self.played) >= m.max_notes_per_sec:
+                e.extra["skipped"] = "busy"
+            else:
+                note = event_to_note(e, a.root_hz, a.scale, a.instruments, m)
             if note is not None:
+                self.played.append(now)
                 delay = 0
                 if a.mode == "beat":            # snap the onset to the next eighth note
                     step = a.sample_rate * 60.0 / a.bpm / 2
@@ -104,7 +131,8 @@ class Pipeline:
             self.counts[e.kind] += 1
             self.event_times.append(time.monotonic())
             log.info("%-8s conf %.2f  %5.1f mm  w %.2f mm  %3.0f deg  -> %s",
-                     e.kind, e.confidence, e.path_mm, e.width_mm, e.angle_deg, e.extra["note"] or "muted")
+                     e.kind, e.confidence, e.path_mm, e.width_mm, e.angle_deg,
+                     e.extra["note"] or e.extra.get("skipped", "silent"))
         return evs
 
 
@@ -247,6 +275,16 @@ class App:
             self.cfg.detect.roi = None
             self.reset_background()
             self.save()
+        elif name == "hear":
+            kind = args.get("kind")
+            if kind not in KINDS:
+                return {"error": "Pick alpha, beta, muon or electron."}
+            a = self.cfg.audio
+            note = event_to_note(sample_event(kind), a.root_hz, a.scale, a.instruments, self.cfg.mapping)
+            if note is None:
+                return {"error": f"{kind.capitalize()} is set to silent."}
+            self.pipe.mixer.play(render(note, a.sample_rate))
+            return {"note": f"{note.instrument} {note.freq:.0f} Hz", "dur": round(note.dur, 2)}
         elif name == "sonos_rooms":
             try:
                 from .sonos import list_speakers
@@ -314,7 +352,8 @@ class App:
         evs = [{"id": e.id, "kind": e.kind, "conf": e.confidence, "path_mm": round(e.path_mm, 1),
                 "width_mm": round(e.width_mm, 2), "angle": round(e.angle_deg),
                 "note": e.extra.get("note"), "freq": e.extra.get("freq"),
-                "dur": e.extra.get("dur"), "x": round(e.x, 3)}
+                "dur": e.extra.get("dur"), "x": round(e.x, 3), "skipped": e.extra.get("skipped"),
+                "delay": e.extra.get("delay", 0)}
                for e, _ in list(self.pipe.recent) if e.id > since][-30:]
         return {
             "settings": self.settings(),

@@ -32,6 +32,21 @@ audio:
   scale: minor_pentatonic # major_pentatonic | dorian | whole_tone | chromatic
   master_gain: 0.6
 
+mapping:                  # how a trace becomes a note (also on the phone page's Tone tab)
+  pitch_from: angle       # angle | length | height | across
+  pitch_octaves: 2
+  pitch_reverse: false
+  length_from: length     # length | fixed
+  length_scale: 1.0
+  loudness_from: brightness   # brightness | length | even
+  dynamics: 0.7
+  stereo: 1.0
+  wobble: 1.0
+  min_confidence: 0.0
+  min_length_mm: 0
+  max_notes_per_sec: 8
+  octaves: {alpha: 0, beta: 1, muon: 2, electron: 3}
+
 sonos:
   speaker: Living Room    # room name; omit for the first one found (`cloudtone sonos-list`)
   volume: 25

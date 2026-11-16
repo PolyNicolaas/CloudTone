@@ -108,3 +108,40 @@ def test_web_endpoints(tmp_path):
     finally:
         app.stop()
         srv.shutdown()
+
+
+def test_mapping_settings_change_the_note():
+    from cloudtone.config import MappingConfig
+    from cloudtone.sonify import event_to_note, sample_event
+    e = sample_event("muon")
+    base = event_to_note(e)
+    m = MappingConfig(pitch_from="across", length_from="fixed", length_scale=2.0,
+                      loudness_from="even", stereo=0.0, wobble=0.0)
+    m.octaves["muon"] = 0
+    n = event_to_note(e, m=m)
+    assert n.freq < base.freq                  # two octaves lower register
+    assert abs(n.dur - 2 * 2.6) < 1e-6         # fixed typical length, doubled
+    assert n.pan == 0 and n.vibrato_cents == 0
+    rev = event_to_note(e, m=MappingConfig(pitch_reverse=True))
+    assert rev.freq != base.freq
+
+
+def test_filters_and_limiter(tmp_path):
+    app = make_app(tmp_path)
+    app.update({"mapping.max_notes_per_sec": 1, "mapping.min_length_mm": 10})
+    src = SimSource(app.cfg.camera, app.cfg.detect.px_per_mm, realtime=False, seed=4, rate_hz=8)
+    evs = []
+    for i, (frame, t) in enumerate(src):
+        evs += app.pipe.step(frame, t)
+        if i > 100:
+            break
+    skipped = {e.extra.get("skipped") for e in evs}
+    assert "short" in skipped and "busy" in skipped
+    assert all(e.path_mm >= 10 for e in evs if e.extra.get("note"))
+
+
+def test_hear_action(tmp_path):
+    app = make_app(tmp_path)
+    assert "note" in app.action("hear", {"kind": "alpha"})
+    app.update({"audio.instruments.alpha": "mute"})
+    assert "error" in app.action("hear", {"kind": "alpha"})
