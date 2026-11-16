@@ -115,6 +115,18 @@ the density along it and its width. The page redraws it on a canvas:
 | wobble | the line shimmers on curvy trails while the note sounds |
 | release | the trail fades and widens into vapour over the afterglow time |
 
+**Looks.** Default is *Vector screen*, modelled on 1970s vector arcade
+monitors and green phosphor terminals:
+
+* green (P1-style) beams on black, with brighter dots where the beam dwells at vertices
+* phosphor persistence: an offscreen layer decays with a ~0.12 s time constant, so moving or wobbling beams smear like a real tube; each redraw adds light in proportion to that decay, so a steady beam settles at its own brightness
+* bloom from two downscaled copies (works on iOS Safari, which lacks canvas filters), slight flicker and beam jitter, vignette and a faint glass glare
+* monochrome particle coding: alpha = bundle of three parallel beams, muon = one razor beam, beta = segmented line with lit corners, electron = small closed curl
+* a hand-made stroke font (4×6 grid, Asteroids-style) for trail labels and an arcade score line (counts, tracks per minute, the note sounding now). The score is drawn fresh each frame so changing digits don't smear
+* in Both view the camera feed gets a green monochrome filter
+
+*Colour glow* keeps the per-particle colours.
+
 **Sync.** Each event is stamped with the Pi's clock at the moment its note
 enters the mix. The page keeps a running estimate of the Pi-to-phone clock
 offset (from poll round trips) and adds the delay of whatever speaker you're

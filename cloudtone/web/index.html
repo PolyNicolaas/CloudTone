@@ -44,6 +44,13 @@
   .chamber #recreate { pointer-events: none; }
   .chamber[data-view="camera"] #recreate { display: none; }
   .chamber[data-view="recreation"] #preview { visibility: hidden; }
+  .chamber[data-look="vector"] #preview { filter: grayscale(1) sepia(1) hue-rotate(68deg) saturate(2.6) brightness(.72) contrast(1.15); }
+  .chamber[data-look="vector"][data-readouts="true"]:not([data-view="camera"]) .state { visibility: hidden; }
+  .chamber[data-look="vector"] { background: #000; }
+  body.vector .chip { --c: #46ff6e; }
+  body.vector .chip[data-kind="muon"] { --c: #d9ffdc; }
+  body.vector .chip[data-kind="electron"] { --c: #2a9c40; }
+  body.show .chamber[data-look="vector"] { background: #000; }
   .views { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; transition: opacity .3s; }
   .views .seg { background: rgba(20,23,41,.78); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border-color: transparent; }
   .views .seg button { padding: 6px 10px; font-size: 14px; }
@@ -293,6 +300,13 @@
 
     <section>
       <h2>Recreation</h2>
+      <div class="row"><div class="lab inline"><span id="look-label">Look</span>
+        <span class="seg" role="group" aria-labelledby="look-label">
+          <button data-look="vector">Vector screen</button><button data-look="colour">Colour glow</button>
+        </span></div>
+        <p id="look-help"></p></div>
+      <div class="row inline"><div><div>Readouts</div><p>Labels on trails and an arcade-style score along the top.</p></div>
+        <label class="switch"><input type="checkbox" id="readouts" aria-label="Show readouts"><i></i></label></div>
       <div class="row">
         <div class="lab inline"><span id="sync-label">Match the speaker</span>
           <span class="seg" role="group" aria-labelledby="sync-label">
@@ -306,7 +320,7 @@
         <p>How long a trail's vapour lingers after its note ends.</p></div>
       <div class="row"><label for="glow">Glow <output id="glow-out"></output></label>
         <input type="range" id="glow" min="20" max="200" step="5"></div>
-      <p style="font-size:14px;color:var(--vapour);margin:8px 0 0">These three are saved on this device only, so a phone and a TV can each match their own speaker.</p>
+      <p style="font-size:14px;color:var(--vapour);margin:8px 0 0">These are saved on this device only, so a phone and a TV can each match their own speaker.</p>
     </section>
 
     <section>
@@ -569,7 +583,9 @@ function drawScore() {
     const x = w - ((now - n.t) / WINDOW) * w, len = Math.max(3, (n.dur / WINDOW) * w);
     const y = h - 6 - (Math.log2(n.freq / 100) / 5.2) * (h - 12);
     const age = now - n.t, glow = age < n.dur ? 1 : 0.55;
-    sctx.globalAlpha = glow; sctx.fillStyle = COLORS[n.kind] || COLORS.unknown;
+    sctx.globalAlpha = glow;
+    sctx.fillStyle = V.look === "vector" ? ({alpha: "#7dff8f", muon: "#d9ffdc", beta: "#3fdc5c", electron: "#2a9c40"}[n.kind] || "#3fdc5c")
+                                         : COLORS[n.kind] || COLORS.unknown;
     sctx.beginPath(); sctx.roundRect(x, y - 2.5, len, 5, 2.5); sctx.fill();
   }
   sctx.globalAlpha = 1;
@@ -606,7 +622,8 @@ setInterval(poll, 300); poll();
 // ---------- the recreation: each trail redrawn, glowing with its note ----------
 const local = (k, d) => { try { const v = localStorage.getItem("ct." + k); return v === null ? d : JSON.parse(v); } catch { return d; } };
 const keep = (k, v) => { try { localStorage.setItem("ct." + k, JSON.stringify(v)); } catch {} };
-const V = { view: local("view", "both"), sync: local("sync", "auto"), delay: local("delay", 3), after: local("after", 1.5), glow: local("glow", 100) };
+const V = { view: local("view", "both"), sync: local("sync", "auto"), delay: local("delay", 3), after: local("after", 1.5), glow: local("glow", 100),
+            look: local("look", "vector"), readouts: local("readouts", true) };
 let clockOffset = null, bestRtt = 1e9;     // client seconds - server seconds
 function syncClock(serverNow, sentAt) {
   const now = performance.now() / 1000, rtt = now - sentAt;
@@ -652,6 +669,7 @@ function envelope(it, age) {                 // brightness follows the note's ow
 const rec = $("#recreate"), rctx = rec.getContext("2d");
 function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${Math.max(0, Math.min(1, a)).toFixed(3)})`; }
 function drawRecreation() {
+  
   requestAnimationFrame(drawRecreation);
   const now = performance.now() / 1000;
   for (let i = items.length - 1; i >= 0; i--) if (now - items[i].start > items[i].dur + V.after + 0.5) items.splice(i, 1);
@@ -661,6 +679,7 @@ function drawRecreation() {
   const c = rctx; c.setTransform(dpr, 0, 0, dpr, 0, 0);
   const [fw, fh] = status.frame || [640, 480], sc = Math.min(b.width / fw, b.height / fh);
   const R = {x: (b.width - fw * sc) / 2, y: (b.height - fh * sc) / 2, w: fw * sc, h: fh * sc};
+  if (V.look === "vector") { drawVector(now, b, R, dpr); return; }
   c.globalCompositeOperation = "source-over";
   c.clearRect(0, 0, b.width, b.height);
   if (V.view === "recreation") {
@@ -738,6 +757,171 @@ function drawRecreation() {
 }
 requestAnimationFrame(drawRecreation);
 
+// ---------- vector screen look: green phosphor beams, 1970s arcade monitor ----------
+// stroke font on a 4x6 grid, Asteroids-style. "|" separates strokes.
+const GLYPHS = {
+  A:"0,6 0,2 2,0 4,2 4,6|0,3 4,3", B:"0,6 0,0 3,0 4,1 4,2 3,3 0,3|3,3 4,4 4,5 3,6 0,6", C:"4,0 0,0 0,6 4,6",
+  D:"0,0 0,6 2,6 4,4 4,2 2,0 0,0", E:"4,0 0,0 0,6 4,6|0,3 3,3", F:"4,0 0,0 0,6|0,3 3,3", G:"4,1 4,0 0,0 0,6 4,6 4,3 2,3",
+  H:"0,0 0,6|4,0 4,6|0,3 4,3", I:"0,0 4,0|2,0 2,6|0,6 4,6", J:"4,0 4,6 2,6 0,4", K:"0,0 0,6|4,0 0,3 4,6", L:"0,0 0,6 4,6",
+  M:"0,6 0,0 2,2 4,0 4,6", N:"0,6 0,0 4,6 4,0", O:"0,0 4,0 4,6 0,6 0,0", P:"0,6 0,0 4,0 4,3 0,3",
+  Q:"0,0 4,0 4,4 2,6 0,6 0,0|2,4 4,6", R:"0,6 0,0 4,0 4,3 0,3|1,3 4,6", S:"4,0 0,0 0,3 4,3 4,6 0,6", T:"0,0 4,0|2,0 2,6",
+  U:"0,0 0,6 4,6 4,0", V:"0,0 2,6 4,0", W:"0,0 0,6 2,4 4,6 4,0", X:"0,0 4,6|4,0 0,6", Y:"0,0 2,2 4,0|2,2 2,6", Z:"0,0 4,0 0,6 4,6",
+  0:"0,0 4,0 4,6 0,6 0,0|0,6 4,0", 1:"1,1 2,0 2,6", 2:"0,0 4,0 4,3 0,3 0,6 4,6", 3:"0,0 4,0 4,6 0,6|0,3 4,3",
+  4:"0,0 0,3 4,3|4,0 4,6", 5:"4,0 0,0 0,3 4,3 4,6 0,6", 6:"4,0 0,0 0,6 4,6 4,3 0,3", 7:"0,0 4,0 4,6",
+  8:"0,0 4,0 4,6 0,6 0,0|0,3 4,3", 9:"4,3 0,3 0,0 4,0 4,6 0,6", ".":"2,5.5 2,6", "-":"1,3 3,3", ":":"2,1.5 2,2|2,4 2,4.5",
+  "/":"0,6 4,0", "%":"0,0 1,1|4,0 0,6|3,5 4,6", " ":"",
+};
+const GL = Object.fromEntries(Object.entries(GLYPHS).map(([k, v]) =>
+  [k, v ? v.split("|").map(st => st.split(" ").map(p => p.split(",").map(Number))) : []]));
+function vtext(c, str, x, y, size, align = "left") {      // size = cap height in px
+  const u = size / 6, adv = 6 * u;
+  str = String(str).toUpperCase();
+  if (align === "right") x -= str.length * adv - 2 * u;
+  if (align === "center") x -= (str.length * adv - 2 * u) / 2;
+  c.beginPath();
+  for (const ch of str) {
+    for (const st of GL[ch] || []) {
+      st.forEach(([gx, gy], i) => i ? c.lineTo(x + gx * u, y + gy * u) : c.moveTo(x + gx * u, y + gy * u));
+      if (st.length === 1 || (st.length === 2 && st[0][0] === st[1][0] && Math.abs(st[0][1] - st[1][1]) < 1)) c.lineTo(x + st[0][0] * u + 0.01, y + st.at(-1)[1] * u);
+    }
+    x += adv;
+  }
+  c.stroke();
+}
+const PHOS = "#46ff6e";                 // P1-style green
+const phos = document.createElement("canvas"), pc = phos.getContext("2d");
+const bloom1 = document.createElement("canvas"), b1 = bloom1.getContext("2d");
+const bloom2 = document.createElement("canvas"), b2 = bloom2.getContext("2d");
+let lastVec = 0, lastNote = null;
+function beam(c, pts, closed, a, w) {
+  c.beginPath(); c.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length; i++) c.lineTo(...pts[i]);
+  if (closed) c.closePath();
+  c.lineWidth = w + 1.6; c.strokeStyle = `rgba(70,255,110,${(a * 0.55).toFixed(3)})`; c.stroke();
+  c.lineWidth = Math.max(0.6, w * 0.6); c.strokeStyle = `rgba(215,255,220,${Math.min(1, a).toFixed(3)})`; c.stroke();
+}
+function dots(c, pts, a, r) {          // the beam dwells at each vertex, so corners burn brighter
+  c.fillStyle = `rgba(225,255,230,${Math.min(1, a).toFixed(3)})`;
+  for (const [x, y] of pts) { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+}
+function drawVector(now, b, R, dpr) {
+  const W = rec.width, H = rec.height;
+  for (const cv of [phos]) if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  if (bloom1.width !== (W >> 2)) { bloom1.width = W >> 2; bloom1.height = H >> 2; bloom2.width = W >> 3; bloom2.height = H >> 3; }
+  const dt = Math.min(0.1, lastVec ? now - lastVec : 0.016); lastVec = now;
+  // phosphor persistence: everything decays with a ~0.12 s time constant
+  const fade = 1 - Math.exp(-dt / 0.12);
+  pc.setTransform(1, 0, 0, 1, 0, 0);
+  pc.globalCompositeOperation = "destination-out"; pc.fillStyle = `rgba(0,0,0,${fade.toFixed(3)})`; pc.fillRect(0, 0, W, H);
+  pc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pc.globalCompositeOperation = "lighter"; pc.lineCap = "round"; pc.lineJoin = "round";
+  // each redraw adds `fade` worth of light, so a steady beam settles at its own brightness
+  const flick = (0.94 + 0.06 * Math.random()) * fade * (V.glow / 100) * 1.6;
+  const jit = () => (Math.random() - 0.5) * 0.35;
+
+  for (const it of items) {
+    const age = now - it.start;
+    if (age < 0) continue;
+    const life = it.dur + V.after;
+    const note = it.silent ? 0 : envelope(it, age) * (0.6 + 0.4 * Math.min(1, it.gain || 0.7));
+    const after = Math.max(0, 1 - age / Math.max(0.1, life)) * (it.silent ? 0.18 : 0.28);
+    const I = Math.max(note, after);
+    if (I < 0.01) continue;
+    const jx = jit(), jy = jit();                         // the whole beam shakes together
+    let pts = it.shape.map(([x, y]) => [R.x + x * R.w + jx, R.y + y * R.h + jy]);
+    if (it.kind === "muon" || it.kind === "alpha") pts = [pts[0], pts.at(-1)];   // straight shots: one stroke
+    // draw-on: the beam sweeps the trail from its start
+    if (!it.closed) {
+      const prog = Math.min(1, age / ((DRAW_ON[it.inst] || 0.08) * 1.6));
+      let total = 0; const seg = [];
+      for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); seg.push(d); total += d; }
+      let lim = total * prog, out = [pts[0]];
+      for (let i = 1; i < pts.length && lim > 0; i++) {
+        if (seg[i-1] >= lim) { const f = lim / seg[i-1]; out.push([pts[i-1][0] + (pts[i][0] - pts[i-1][0]) * f, pts[i-1][1] + (pts[i][1] - pts[i-1][1]) * f]); break; }
+        out.push(pts[i]); lim -= seg[i-1];
+      }
+      if (out.length < 2) continue;
+      pts = out;
+    } else {
+      const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+      const g = Math.min(1, 0.3 + age / 0.1);
+      pts = pts.map(([x, y]) => [cx + (x - cx) * g, cy + (y - cy) * g]);
+    }
+    if (it.vib > 0 && note > 0.05) {
+      const amp = Math.min(2.5, it.vib / 30) * note;
+      pts = pts.map(([x, y], i) => [x + Math.sin(now * 33 + i * 1.9) * amp, y + Math.cos(now * 27 + i * 1.4) * amp]);
+    }
+    const a = I * flick;
+    const wpx = Math.max(1, (it.w || 0.004) * R.w);
+    if (it.kind === "alpha") {
+      // a fat trail drawn the vector way: a bundle of parallel beams
+      const [x0, y0] = pts[0], [x1, y1] = pts.at(-1), L = Math.hypot(x1 - x0, y1 - y0) || 1;
+      const nx = -(y1 - y0) / L, ny = (x1 - x0) / L, off = Math.max(1.4, wpx * 0.35);
+      for (const k of [-1, 0, 1]) beam(pc, pts.map(([x, y]) => [x + nx * off * k, y + ny * off * k]), false, a * (k ? 0.75 : 1.1), 1.1);
+      dots(pc, [pts[0], pts.at(-1)], a * 1.4, 1.6);
+    } else if (it.kind === "muon") {
+      beam(pc, pts, false, a * 1.25, 0.8);                    // one razor beam, edge to edge
+      dots(pc, [pts[0], pts.at(-1)], a, 1.1);
+    } else if (it.kind === "beta") {
+      beam(pc, pts, false, a * 0.95, 0.9);                    // segmented, every corner lit
+      dots(pc, pts, a * 0.7, 0.9);
+    } else {
+      beam(pc, pts, it.closed, a * 0.9, 0.8);                 // a little vector curl
+      dots(pc, pts.filter((_, i) => i % 2 === 0), a * 0.5, 0.8);
+    }
+    if (V.readouts && I > 0.06) {
+      const [ex, ey] = pts.at(-1);
+      pc.lineWidth = 1; pc.strokeStyle = `rgba(120,255,150,${(a * 0.8).toFixed(3)})`;
+      const sz = Math.max(6, R.w / 75);
+      vtext(pc, `${it.kind === "electron" ? "E-" : it.kind}${it.path_mm ? " " + Math.round(it.path_mm) + "MM" : ""}`,
+            Math.min(ex + 6, R.x + R.w - sz * 9), Math.max(R.y + sz * 3.5, ey - sz - 4), sz);
+    }
+    if (!it.silent && age < it.dur && (!lastNote || it.start >= lastNote.start)) lastNote = it;
+  }
+
+  // composite: black tube, the phosphor, two bloom passes, then the glass
+  const c = rctx; c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, W, H);
+  if (V.view === "recreation") {
+    c.fillStyle = "#000"; c.fillRect(0, 0, W, H);
+    const fog = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.6);
+    fog.addColorStop(0, "rgba(20,60,28,.22)"); fog.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = fog; c.fillRect(0, 0, W, H);
+  }
+  c.drawImage(phos, 0, 0);
+  b1.clearRect(0, 0, bloom1.width, bloom1.height); b1.drawImage(phos, 0, 0, bloom1.width, bloom1.height);
+  b2.clearRect(0, 0, bloom2.width, bloom2.height); b2.drawImage(bloom1, 0, 0, bloom2.width, bloom2.height);
+  c.globalCompositeOperation = "lighter"; c.imageSmoothingEnabled = true;
+  c.globalAlpha = 0.85; c.drawImage(bloom1, 0, 0, W, H);
+  c.globalAlpha = 0.7; c.drawImage(bloom2, 0, 0, W, H);
+  c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+  const vig = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+  vig.addColorStop(0, "rgba(0,0,0,0)"); vig.addColorStop(1, "rgba(0,0,0,.55)");
+  c.fillStyle = vig; c.fillRect(0, 0, W, H);
+  const glare = c.createRadialGradient(W * 0.28, H * 0.18, 0, W * 0.28, H * 0.18, Math.max(W, H) * 0.45);
+  glare.addColorStop(0, "rgba(200,255,210,.035)"); glare.addColorStop(1, "rgba(200,255,210,0)");
+  c.fillStyle = glare; c.fillRect(0, 0, W, H);
+
+  // arcade readout along the top and the sounding note: drawn fresh each frame
+  // (not into the phosphor), so changing digits don't smear into each other
+  if (V.readouts) {
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.lineCap = "round"; c.lineJoin = "round";
+    const fl = 0.94 + 0.06 * Math.random();
+    const sz = Math.max(7, R.w / 62), top = R.y + sz * 1.2, left = R.x + sz;
+    const n = k => String(status.counts?.[k] ?? 0).padStart(3, "0");
+    const lines = [[`A ${n("alpha")}  B ${n("beta")}  M ${n("muon")}  E ${n("electron")}`, left, top, "left"],
+                   [status.paused ? (Math.floor(now * 2) % 2 ? "PAUSED" : "") : `${String(status.per_min ?? 0).padStart(3, "0")}/MIN`,
+                    R.x + R.w - sz, top, "right"]];
+    if (lastNote && now - lastNote.start < lastNote.dur + 0.4 && lastNote.freq)
+      lines.push([`${lastNote.kind} ${Math.round(lastNote.freq)} HZ`, left, R.y + R.h - sz * 2, "left"]);
+    for (const [w, a] of [[3.2, 0.16], [1.1, 0.85]]) {        // soft halo, then the beam
+      c.lineWidth = w; c.strokeStyle = `rgba(110,255,140,${(a * fl).toFixed(3)})`;
+      for (const [t, x, y, al] of lines) vtext(c, t, x, y, sz, al);
+    }
+  }
+}
+
 // view switch, show mode, and device-only settings
 function setView(v) {
   V.view = v; keep("view", v);
@@ -773,6 +957,21 @@ if (location.pathname === "/show" || new URLSearchParams(location.search).has("s
   document.body.classList.add("show"); wake();
 }
 
+function setLook(l) {
+  V.look = l; keep("look", l);
+  $("#chamber").dataset.look = l;
+  document.body.classList.toggle("vector", l === "vector");
+  $$("[data-look]").forEach(b => b.setAttribute("aria-pressed", b.dataset.look === l));
+  $("#look-help").textContent = l === "vector"
+    ? "Green phosphor beams, like a 1970s vector arcade monitor. Alphas are a bundle of beams, muons a single razor line, betas segmented with lit corners."
+    : "Each particle glows in its own colour.";
+  pc.clearRect(0, 0, phos.width, phos.height);
+}
+$$("[data-look]").forEach(b => b.addEventListener("click", () => setLook(b.dataset.look)));
+setLook(V.look);
+$("#readouts").checked = V.readouts;
+$("#chamber").dataset.readouts = V.readouts;
+$("#readouts").addEventListener("change", e => { V.readouts = e.target.checked; keep("readouts", V.readouts); $("#chamber").dataset.readouts = V.readouts; });
 function renderRecreationControls() {
   $$("[data-sync]").forEach(b => b.setAttribute("aria-pressed", b.dataset.sync === V.sync));
   $("#sync-manual").hidden = V.sync !== "manual";

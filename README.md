@@ -43,6 +43,9 @@ Open `http://<pi-address>:8765/` on your phone (same Wi-Fi).
   redrawn from its real shape and glows in its particle's colour as its note plays: it streaks
   on with the attack, pulses with the note's envelope, wobbles if curvy, then fades like vapour.
   Timing matches whichever speaker you hear (Sonos, Listen here, or the Pi), set on the Tone tab.
+  The default look is a **1970s green vector monitor**: phosphor beams with persistence and bloom,
+  alphas as bundled beams, muons as razor lines, betas segmented with lit corners, and an
+  Asteroids-style stroke font for labels and the score. "Colour glow" is the alternative.
 * **Show mode**: tap the full-screen button, or open `http://<pi-address>:8765/show` on a TV
   or tablet next to the chamber.
 * **Listen here** plays the same stream Sonos gets, on the phone itself.
