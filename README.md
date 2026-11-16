@@ -39,6 +39,12 @@ Open `http://<pi-address>:8765/` on your phone (same Wi-Fi).
   filters to skip uncertain or short trails or cap notes per second.
 * **Setup**: measure the scale with a ruler, drag a crop around the chamber floor, reset the
   background, camera exposure/gain/focus, detail level.
+* **Recreation**: switch the view between Camera, Recreation and Both. Each detected trail is
+  redrawn from its real shape and glows in its particle's colour as its note plays: it streaks
+  on with the attack, pulses with the note's envelope, wobbles if curvy, then fades like vapour.
+  Timing matches whichever speaker you hear (Sonos, Listen here, or the Pi), set on the Tone tab.
+* **Show mode**: tap the full-screen button, or open `http://<pi-address>:8765/show` on a TV
+  or tablet next to the chamber.
 * **Listen here** plays the same stream Sonos gets, on the phone itself.
 
 Every change applies at once and is saved to `config.yaml`.

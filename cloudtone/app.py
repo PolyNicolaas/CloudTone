@@ -64,7 +64,7 @@ SETTINGS = {
 }
 
 
-def annotate(gray, recent, now, bg=None, roi=None):
+def annotate(gray, recent, now, bg=None, roi=None, boxes=True):
     ox, oy = (roi[0], roi[1]) if roi else (0, 0)
     g = cv2.convertScaleAbs(gray, alpha=1.6, beta=-10)
     if bg is not None:                      # background-subtracted: trails pop out
@@ -75,7 +75,7 @@ def annotate(gray, recent, now, bg=None, roi=None):
     img = cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
     if roi:
         cv2.rectangle(img, (ox, oy), (ox + roi[2], oy + roi[3]), (120, 110, 90), 1)
-    for e, born in recent:
+    for e, born in (recent if boxes else ()):
         if now - born > 2.5:          # roughly how long a trail stays visible
             continue
         x, y, w, h = e.bbox
@@ -126,7 +126,10 @@ class Pipeline:
                     delay = int((-self.mixer.samples_out) % step)
                 self.mixer.play(render(note, a.sample_rate, self.rng), delay)
                 e.extra.update(note=f"{note.instrument} {note.freq:.0f} Hz", freq=note.freq,
-                               dur=note.dur, delay=delay / a.sample_rate)
+                               dur=note.dur, delay=delay / a.sample_rate, inst=note.instrument,
+                               vib=note.vibrato_cents, gain=note.gain)
+            # when this trail's note enters the mix (server clock), so screens can sync to it
+            e.extra["ts"] = time.monotonic() + e.extra.get("delay", 0)
             self.recent.append((e, t))
             self.counts[e.kind] += 1
             self.event_times.append(time.monotonic())
@@ -162,8 +165,8 @@ class App:
         self.restart_needed = False
         self.fps = 0.0
         self.frame_size = (cfg.camera.width, cfg.camera.height)
-        self.preview_clients = 0
-        self.jpeg: bytes | None = None
+        self.preview_clients = {True: 0, False: 0}     # with boxes / without (for the Both view)
+        self.jpeg: dict = {True: None, False: None}
         self.jpeg_cond = threading.Condition()
         self.source = None
         self.out_state = {"sonos": "off", "local": "off"}
@@ -349,7 +352,13 @@ class App:
     def state(self, since: int = 0) -> dict:
         now = time.monotonic()
         rate = sum(1 for t in self.pipe.event_times if now - t <= 60)
+        fw = max(1, self.frame_size[0])
+        ppm = self.cfg.detect.px_per_mm
         evs = [{"id": e.id, "kind": e.kind, "conf": e.confidence, "path_mm": round(e.path_mm, 1),
+                "shape": e.shape, "closed": e.shape_closed, "profile": e.profile,
+                "w": round(e.width_mm * ppm / fw, 4), "ts": round(e.extra.get("ts", 0), 3),
+                "inst": e.extra.get("inst"), "vib": round(e.extra.get("vib") or 0, 1),
+                "gain": round(e.extra.get("gain") or 0, 2),
                 "width_mm": round(e.width_mm, 2), "angle": round(e.angle_deg),
                 "note": e.extra.get("note"), "freq": e.extra.get("freq"),
                 "dur": e.extra.get("dur"), "x": round(e.x, 3), "skipped": e.extra.get("skipped"),
@@ -365,6 +374,7 @@ class App:
                 "frame": list(self.frame_size), "restart_needed": self.restart_needed,
             },
             "events": evs,
+            "server_now": round(now, 3),
             "last_id": self.pipe.recent[-1][0].id if self.pipe.recent else since,
         }
 
@@ -387,16 +397,19 @@ class App:
                 now = time.monotonic()
                 if now - t_fps >= 2:
                     self.fps, n, t_fps = n / (now - t_fps), 0, now
-                if self.preview_clients and now - t_prev >= 1 / c.web.preview_fps:
+                if any(self.preview_clients.values()) and now - t_prev >= 1 / c.web.preview_fps:
                     t_prev = now
-                    img = annotate(frame, list(self.pipe.recent)[-20:], t, self.pipe.det.bg, c.detect.roi)
-                    pw = c.web.preview_width
-                    img = cv2.resize(img, (pw, int(img.shape[0] * pw / img.shape[1])), interpolation=cv2.INTER_AREA)
-                    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
-                    if ok:
-                        with self.jpeg_cond:
-                            self.jpeg = jpg.tobytes()
-                            self.jpeg_cond.notify_all()
+                    for boxes, n_clients in self.preview_clients.items():
+                        if not n_clients:
+                            continue
+                        img = annotate(frame, list(self.pipe.recent)[-20:], t, self.pipe.det.bg, c.detect.roi, boxes)
+                        pw = c.web.preview_width
+                        img = cv2.resize(img, (pw, int(img.shape[0] * pw / img.shape[1])), interpolation=cv2.INTER_AREA)
+                        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 72])
+                        if ok:
+                            with self.jpeg_cond:
+                                self.jpeg[boxes] = jpg.tobytes()
+                                self.jpeg_cond.notify_all()
         finally:
             self.engine.stop()
 

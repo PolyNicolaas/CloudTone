@@ -2,6 +2,7 @@
 nothing extra on a Pi Zero.
 
   GET  /                 the control page
+  GET  /show             full-screen recreation, for a TV or tablet by the chamber
   GET  /api/state?since= settings, status and new events (polled by the page)
   POST /api/settings     {"audio.bpm": 110, ...}  -> applied live and saved
   POST /api/action       {"action": "reset_background" | "pause" | ...}
@@ -42,7 +43,7 @@ def serve(app, port: int) -> ThreadingHTTPServer:
 
         def do_GET(self):
             url = urlparse(self.path)
-            if url.path in ("/", "/index.html"):
+            if url.path in ("/", "/index.html", "/show"):
                 self._send(200, page, "text/html; charset=utf-8")
             elif url.path == "/api/state":
                 since = int(parse_qs(url.query).get("since", ["0"])[0] or 0)
@@ -50,7 +51,7 @@ def serve(app, port: int) -> ThreadingHTTPServer:
             elif url.path == "/status":
                 self._json(app.state()["status"])
             elif url.path == "/preview.mjpg":
-                self._mjpeg()
+                self._mjpeg(parse_qs(url.query).get("boxes", ["1"])[0] != "0")
             elif url.path == "/stream.mp3":
                 self._mp3()
             else:
@@ -70,18 +71,18 @@ def serve(app, port: int) -> ThreadingHTTPServer:
             else:
                 self._json({"error": "not found"}, 404)
 
-        def _mjpeg(self):
+        def _mjpeg(self, boxes=True):
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            app.preview_clients += 1
+            app.preview_clients[boxes] += 1
             last = None
             try:
                 while True:
                     with app.jpeg_cond:
-                        app.jpeg_cond.wait_for(lambda: app.jpeg is not last, timeout=5)
-                        jpg = app.jpeg
+                        app.jpeg_cond.wait_for(lambda: app.jpeg[boxes] is not last, timeout=5)
+                        jpg = app.jpeg[boxes]
                     if jpg is None or jpg is last:
                         continue
                     last = jpg
@@ -90,7 +91,7 @@ def serve(app, port: int) -> ThreadingHTTPServer:
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
             finally:
-                app.preview_clients -= 1
+                app.preview_clients[boxes] -= 1
 
         def _mp3(self):
             if app.hub is None:

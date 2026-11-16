@@ -1,4 +1,4 @@
-# CloudTone design (v0.2)
+# CloudTone design (v0.3)
 
 A Raspberry Pi watches a cloud chamber, spots each new condensation trail, works
 out what particle probably made it, and plays a note shaped by the trail. The
@@ -99,6 +99,30 @@ Skipped trails still count and still light the page; they just don't sound.
 in milliseconds. Ionisation density is the physical stand-in: slow, heavy
 particles (alphas) ionise densely, while fast, minimum-ionising ones (muons)
 leave faint lines. So the "speed" information arrives as loudness and timbre.
+
+## Recreation (visuals)
+
+Each event carries its trail's shape: the measured centreline (or, for short
+curls, a simplified outline), up to 24 points as fractions of the frame, plus
+the density along it and its width. The page redraws it on a canvas:
+
+| Note | Trail on screen |
+|---|---|
+| attack | trail streaks on from one end (fast for muons, slower for betas); curls bloom out |
+| envelope | brightness follows the instrument: bell decays, glass swells, pluck snaps, tick flashes |
+| loudness | overall glow |
+| density along the trail | brighter where the real trail was denser (e.g. an alpha's end) |
+| wobble | the line shimmers on curvy trails while the note sounds |
+| release | the trail fades and widens into vapour over the afterglow time |
+
+**Sync.** Each event is stamped with the Pi's clock at the moment its note
+enters the mix. The page keeps a running estimate of the Pi-to-phone clock
+offset (from poll round trips) and adds the delay of whatever speaker you're
+hearing. With Listen here it reads the browser's own audio buffer; Sonos
+defaults to 3 s; the Pi speaker is live. You can set the delay by hand per
+device. View, delay, afterglow and glow are stored per device, so a TV and a
+phone can differ. The Pi stops rendering camera frames when nobody is
+watching them (Recreation view).
 
 ## Sonos
 

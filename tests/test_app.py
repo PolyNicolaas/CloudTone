@@ -145,3 +145,21 @@ def test_hear_action(tmp_path):
     assert "note" in app.action("hear", {"kind": "alpha"})
     app.update({"audio.instruments.alpha": "mute"})
     assert "error" in app.action("hear", {"kind": "alpha"})
+
+
+def test_events_carry_shape_for_recreation(tmp_path):
+    app = make_app(tmp_path)
+    app.update({"detect.px_per_mm": 6.4})
+    src = SimSource(app.cfg.camera, app.cfg.detect.px_per_mm, realtime=False, seed=3, rate_hz=3)
+    for i, (frame, t) in enumerate(src):
+        app.frame_size = (frame.shape[1], frame.shape[0])
+        app.pipe.step(frame, t)
+        if i > 120:
+            break
+    st = app.state()
+    assert st["events"] and "server_now" in st
+    for e in st["events"]:
+        assert len(e["shape"]) >= 2 and all(0 <= x <= 1 and 0 <= y <= 1 for x, y in e["shape"])
+        assert e["w"] > 0 and e["ts"] > 0
+        if not e["closed"]:
+            assert len(e["profile"]) == len(e["shape"])

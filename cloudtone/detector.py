@@ -29,6 +29,10 @@ class TrackEvent:
     kind: str = "unknown"
     confidence: float = 0.0
     extra: dict = field(default_factory=dict)
+    # for the on-screen recreation: points as (x, y) fractions of the full frame
+    shape: list = field(default_factory=list)
+    shape_closed: bool = False      # True = outline of a curl rather than a centreline
+    profile: list = field(default_factory=list)   # 0..1 density along the shape
 
 
 def measure(coords: np.ndarray, weights: np.ndarray, ppm: float) -> dict:
@@ -47,11 +51,12 @@ def measure(coords: np.ndarray, weights: np.ndarray, ppm: float) -> dict:
     nb = int(np.clip(length / max(2.0, 1.5 * width), 3, 40))
     edges = np.linspace(p.min(), p.max() + 1e-6, nb + 1)
     idx = np.clip(np.digitize(p, edges) - 1, 0, nb - 1)
-    centres = []
+    centres, dens = [], []
     for i in range(nb):
         sel = idx == i
         if sel.any():
             centres.append(((edges[i] + edges[i + 1]) / 2, r[sel].mean()))
+            dens.append(float(weights[sel].sum()))
     cl = np.array(centres)
     path = float(np.sum(np.hypot(np.diff(cl[:, 0]), np.diff(cl[:, 1])))) if len(cl) > 1 else length
     # remove any constant tilt before measuring wiggle
@@ -62,7 +67,13 @@ def measure(coords: np.ndarray, weights: np.ndarray, ppm: float) -> dict:
         resid = np.zeros(1)
     wiggle = float(np.sqrt(np.mean(resid ** 2)) / length)
     ang = math.degrees(math.atan2(v1[1], v1[0])) % 180.0
+    # centreline back in image pixels, stretched to the true ends of the trail
+    ends = np.array([[p.min(), cl[0, 1]], *cl, [p.max(), cl[-1, 1]]])
+    line = mu + ends[:, :1] * v1 + ends[:, 1:2] * v2
+    dens = np.array([dens[0], *dens, dens[-1]])
+    dens = (dens / (dens.max() + 1e-9)).tolist()
     return dict(
+        _line=line, _dens=dens,
         x=mu[0], y=mu[1],
         length_mm=length / ppm, path_mm=max(path, length) / ppm,
         width_mm=width / ppm, angle_deg=ang, wiggle=wiggle,
@@ -90,6 +101,7 @@ class TrackDetector:
         self.last_fg: np.ndarray | None = None   # frame index each pixel was last (near) foreground
         self.birth: np.ndarray | None = None     # frame index an accumulating onset pixel appeared
         self.last_mask: np.ndarray | None = None
+        self.full_shape = (1, 1)
         k = max(1, cfg.close_kernel_px)
         self._close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
         self._open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -98,6 +110,7 @@ class TrackDetector:
 
     def process(self, gray: np.ndarray, t: float) -> list[TrackEvent]:
         cfg = self.cfg
+        self.full_shape = gray.shape[:2]
         if cfg.roi:
             x, y, w, h = cfg.roi
             gray = gray[y:y + h, x:x + w]
@@ -154,7 +167,37 @@ class TrackDetector:
             clipped = bbox[0] <= 1 or bbox[1] <= 1 or bbox[0] + bbox[2] >= W - 1 or bbox[1] + bbox[3] >= H - 1
             ox, oy = (cfg.roi[0], cfg.roi[1]) if cfg.roi else (0, 0)
             bbox = (bbox[0] + ox, bbox[1] + oy, bbox[2], bbox[3])     # full-frame pixels
+            line, dens = m.pop("_line"), m.pop("_dens")
+            shape, closed, dens = self._shape(line, dens, xs, ys, m)
             events.append(TrackEvent(id=self.next_id, t=t, x=m.pop("x") / W, y=m.pop("y") / H,
-                                     clipped=bool(clipped), bbox=bbox, **m))
+                                     clipped=bool(clipped), bbox=bbox, shape=shape,
+                                     shape_closed=closed, profile=dens,
+                                     **m))
             self.next_id += 1
         return events
+
+    def _shape(self, line, dens, xs, ys, m) -> tuple[list, bool, list]:
+        """Simplified trail shape in full-frame fractions. Straight-ish trails
+        give their centreline; short curls give their outline."""
+        ox, oy = (self.cfg.roi[0], self.cfg.roi[1]) if self.cfg.roi else (0, 0)
+        FH, FW = self.full_shape
+        closed = m["length_mm"] < 12 or m["wiggle"] > 0.08     # curls and fold-backs
+        if closed:
+            x0, y0 = xs.min(), ys.min()
+            blob = np.zeros((ys.max() - y0 + 3, xs.max() - x0 + 3), np.uint8)
+            blob[ys - y0 + 1, xs - x0 + 1] = 255
+            cs, _ = cv2.findContours(blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if cs:
+                c = cv2.approxPolyDP(max(cs, key=len), 1.0, True)[:, 0, :].astype(np.float64)
+                line = c + [x0 - 1, y0 - 1]
+            else:
+                closed = False
+        if closed:
+            dens = []
+        if len(line) > 24:                       # keep the payload small
+            keep = np.linspace(0, len(line) - 1, 24).round().astype(int)
+            line = line[keep]
+            dens = [dens[i] for i in keep] if dens else []
+        pts = [[round(min(1.0, max(0.0, (px + ox) / FW)), 4), round(min(1.0, max(0.0, (py + oy) / FH)), 4)]
+               for px, py in line]
+        return pts, closed, [round(d, 2) for d in dens]
